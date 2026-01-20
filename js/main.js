@@ -1,7 +1,10 @@
 /**
  * Main application file
  * Initializes puzzle cutter, engine, and UI
+ * @version 1.0.0
  */
+
+const VERSION = '1.0.0';
 
 let puzzleCutter;
 let puzzleEngine;
@@ -19,6 +22,10 @@ let touchInfo;
  * Initialize the application
  */
 function init() {
+    console.log(`🧩 Multiplayer Jigsaw Puzzle v${VERSION}`);
+    console.log('Phase 1: Core Engine ✓');
+    console.log('Phase 2: Touch Controls ✓');
+
     // Get UI elements
     canvas = document.getElementById('puzzleCanvas');
     pieceCountSelect = document.getElementById('pieceCount');

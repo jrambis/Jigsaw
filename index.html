@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Multiplayer Jigsaw Puzzle</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <div id="controls">
+            <div class="control-group">
+                <label for="pieceCount">Pieces:</label>
+                <select id="pieceCount">
+                    <option value="25">25 pieces</option>
+                    <option value="50">50 pieces</option>
+                    <option value="100">100 pieces</option>
+                    <option value="200" selected>200 pieces</option>
+                    <option value="500">500 pieces</option>
+                    <option value="1000">1000 pieces</option>
+                    <option value="1500">1500 pieces</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="imageSelect">Image:</label>
+                <select id="imageSelect">
+                    <option value="sample1.jpg">Sample 1</option>
+                    <option value="sample2.jpg">Sample 2</option>
+                    <option value="sample3.jpg">Sample 3</option>
+                </select>
+            </div>
+            <button id="startBtn">Start New Puzzle</button>
+            <button id="resetViewBtn">Reset View</button>
+            <div id="stats">
+                <span id="progressText">0% Complete</span>
+                <span id="touchInfo"></span>
+            </div>
+        </div>
+
+        <div id="canvasContainer">
+            <canvas id="puzzleCanvas"></canvas>
+        </div>
+
+        <div id="instructions">
+            <h3>Controls:</h3>
+            <p><strong>Touch:</strong> Tap = Pan | Hold & Drag = Move Piece | Edge = Auto-pan | Two-finger = Selection Box</p>
+            <p><strong>Mouse:</strong> Click & Drag = Pan | Alt+Drag = Move Piece | Shift+Drag = Selection Box</p>
+        </div>
+    </div>
+
+    <script src="js/PuzzleCutter.js"></script>
+    <script src="js/PuzzleEngine.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

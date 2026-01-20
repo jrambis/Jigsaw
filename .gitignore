@@ -1,0 +1,42 @@
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies (for future npm/composer use)
+node_modules/
+vendor/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+
+# Build files (for future builds)
+dist/
+build/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Uploaded images (Phase 5)
+uploads/
+images/uploaded/
+
+# Session/data files (Phase 3)
+data/*.json
+sessions/*.json
+
+# Keep directory structure
+!data/.gitkeep
+!sessions/.gitkeep

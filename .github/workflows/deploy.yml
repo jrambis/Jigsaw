@@ -1,0 +1,69 @@
+name: Deploy to Ionos Hosting
+
+# Trigger deployment on push to main branch or the current development branch
+on:
+  push:
+    branches:
+      - main
+      - master
+      - claude/add-touch-controls-4GPXy
+  workflow_dispatch: # Allows manual triggering from GitHub Actions tab
+
+jobs:
+  deploy:
+    name: Deploy to rambis.net/puzzle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display deployment info
+        run: |
+          echo "🚀 Deploying Jigsaw Puzzle to Ionos hosting"
+          echo "📦 Branch: ${{ github.ref_name }}"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "👤 Author: ${{ github.actor }}"
+
+      - name: List files to deploy
+        run: |
+          echo "Files to be deployed:"
+          ls -lh index.html styles.css
+          ls -lh js/
+
+      - name: Deploy via SFTP
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: 'access-5019433264.webspace-host.com'
+          port: 22
+          username: 'a1407652'
+          password: ${{ secrets.SFTP_PASSWORD }}
+          local_path: './*'
+          remote_path: '/puzzle'
+          sftp_only: true
+          args: '-o ConnectTimeout=5'
+
+      - name: Verify deployment
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: 'access-5019433264.webspace-host.com'
+          port: 22
+          username: 'a1407652'
+          password: ${{ secrets.SFTP_PASSWORD }}
+          sftp_only: true
+          args: '-o ConnectTimeout=5'
+          # Use sftpArgs to run ls command
+          sftpArgs: '-o ConnectTimeout=5'
+        continue-on-error: true
+
+      - name: Deployment complete
+        run: |
+          echo "✅ Deployment successful!"
+          echo "🌐 Visit: https://rambis.net/puzzle/"
+          echo "📅 Deployed at: $(date)"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check the logs above for details."

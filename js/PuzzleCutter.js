@@ -66,14 +66,27 @@ class PuzzleCutter {
     }
 
     /**
+     * Generate random variation for a tab/blank edge
+     * @returns {Object} Variation parameters
+     */
+    generateEdgeVariation() {
+        return {
+            neckWidth: 0.4 + Math.random() * 0.2,    // 0.4 - 0.6
+            headWidth: 0.7 + Math.random() * 0.3,    // 0.7 - 1.0
+            headHeight: 0.8 + Math.random() * 0.3,   // 0.8 - 1.1
+            neckHeight: 0.1 + Math.random() * 0.1    // 0.1 - 0.2
+        };
+    }
+
+    /**
      * Generate all puzzle pieces with interlocking shapes
      * @returns {Array} Array of piece objects
      */
     generatePieces() {
         const pieces = [];
 
-        // Generate random tab/blank pattern
-        // Each edge can have a tab (1), blank (-1), or be flat (0 for edges)
+        // Generate random tab/blank pattern with variation
+        // Each edge stores: { direction: 1/-1, variation: {...} }
         const horizontalEdges = []; // Vertical edges between pieces
         const verticalEdges = [];   // Horizontal edges between pieces
 
@@ -81,7 +94,10 @@ class PuzzleCutter {
         for (let row = 0; row < this.rows; row++) {
             horizontalEdges[row] = [];
             for (let col = 0; col < this.cols - 1; col++) {
-                horizontalEdges[row][col] = Math.random() > 0.5 ? 1 : -1;
+                horizontalEdges[row][col] = {
+                    direction: Math.random() > 0.5 ? 1 : -1,
+                    variation: this.generateEdgeVariation()
+                };
             }
         }
 
@@ -89,7 +105,10 @@ class PuzzleCutter {
         for (let row = 0; row < this.rows - 1; row++) {
             verticalEdges[row] = [];
             for (let col = 0; col < this.cols; col++) {
-                verticalEdges[row][col] = Math.random() > 0.5 ? 1 : -1;
+                verticalEdges[row][col] = {
+                    direction: Math.random() > 0.5 ? 1 : -1,
+                    variation: this.generateEdgeVariation()
+                };
             }
         }
 
@@ -124,12 +143,25 @@ class PuzzleCutter {
         const x = col * this.pieceWidth;
         const y = row * this.pieceHeight;
 
-        // Determine tabs/blanks for each side
+        // Determine tabs/blanks for each side with variation
+        // Each edge: { direction: 0/1/-1, variation: {...} } or just 0 for flat edges
         const tabs = {
-            top: row === 0 ? 0 : -vEdges[row - 1][col],
-            right: col === this.cols - 1 ? 0 : hEdges[row][col],
-            bottom: row === this.rows - 1 ? 0 : vEdges[row][col],
-            left: col === 0 ? 0 : -hEdges[row][col - 1]
+            top: row === 0 ? { direction: 0 } : {
+                direction: -vEdges[row - 1][col].direction,
+                variation: vEdges[row - 1][col].variation
+            },
+            right: col === this.cols - 1 ? { direction: 0 } : {
+                direction: hEdges[row][col].direction,
+                variation: hEdges[row][col].variation
+            },
+            bottom: row === this.rows - 1 ? { direction: 0 } : {
+                direction: vEdges[row][col].direction,
+                variation: vEdges[row][col].variation
+            },
+            left: col === 0 ? { direction: 0 } : {
+                direction: -hEdges[row][col - 1].direction,
+                variation: hEdges[row][col - 1].variation
+            }
         };
 
         // Create canvas for this piece
@@ -196,44 +228,44 @@ class PuzzleCutter {
         ctx.moveTo(tabSize, tabSize);
 
         // Top edge
-        if (tabs.top !== 0) {
+        if (tabs.top.direction !== 0) {
             this.drawTab(ctx,
                 tabSize, tabSize,
                 tabSize + w, tabSize,
-                tabs.top, tabSize, 'horizontal'
+                tabs.top.direction, tabSize, 'horizontal', 'top', tabs.top.variation
             );
         } else {
             ctx.lineTo(tabSize + w, tabSize);
         }
 
         // Right edge
-        if (tabs.right !== 0) {
+        if (tabs.right.direction !== 0) {
             this.drawTab(ctx,
                 tabSize + w, tabSize,
                 tabSize + w, tabSize + h,
-                tabs.right, tabSize, 'vertical'
+                tabs.right.direction, tabSize, 'vertical', 'right', tabs.right.variation
             );
         } else {
             ctx.lineTo(tabSize + w, tabSize + h);
         }
 
         // Bottom edge
-        if (tabs.bottom !== 0) {
+        if (tabs.bottom.direction !== 0) {
             this.drawTab(ctx,
                 tabSize + w, tabSize + h,
                 tabSize, tabSize + h,
-                tabs.bottom, tabSize, 'horizontal'
+                tabs.bottom.direction, tabSize, 'horizontal', 'bottom', tabs.bottom.variation
             );
         } else {
             ctx.lineTo(tabSize, tabSize + h);
         }
 
         // Left edge
-        if (tabs.left !== 0) {
+        if (tabs.left.direction !== 0) {
             this.drawTab(ctx,
                 tabSize, tabSize + h,
                 tabSize, tabSize,
-                tabs.left, tabSize, 'vertical'
+                tabs.left.direction, tabSize, 'vertical', 'left', tabs.left.variation
             );
         } else {
             ctx.lineTo(tabSize, tabSize);
@@ -252,19 +284,38 @@ class PuzzleCutter {
      * @param {number} direction - 1 for tab (out), -1 for blank (in)
      * @param {number} size - Tab size
      * @param {string} orientation - 'horizontal' or 'vertical'
+     * @param {string} side - 'top', 'right', 'bottom', or 'left'
+     * @param {Object} variation - Tab dimension variations
      */
-    drawTab(ctx, x1, y1, x2, y2, direction, size, orientation) {
+    drawTab(ctx, x1, y1, x2, y2, direction, size, orientation, side, variation) {
         const length = orientation === 'horizontal' ? Math.abs(x2 - x1) : Math.abs(y2 - y1);
 
-        // Tab dimensions
-        const neckWidth = size * 0.5;      // Width of the narrow neck
-        const headWidth = size * 0.85;     // Width of the bulbous head
-        const headHeight = size * 0.9;     // How far the head extends
-        const neckHeight = size * 0.15;    // How far the neck extends before the head
+        // Tab dimensions with variation
+        const neckWidth = size * variation.neckWidth;
+        const headWidth = size * variation.headWidth;
+        const headHeight = size * variation.headHeight;
+        const neckHeight = size * variation.neckHeight;
+
+        // Calculate the actual tab direction based on which side we're drawing
+        // direction = 1 means tab (protrude OUTSIDE), -1 means blank (cut INSIDE)
+        // We need to determine what "outside" means for each side:
+        // - Top edge: outside is negative Y (up)
+        // - Right edge: outside is positive X (right)
+        // - Bottom edge: outside is positive Y (down)
+        // - Left edge: outside is negative X (left)
+        let tabDir;
+        if (side === 'top') {
+            tabDir = -direction;  // Tab goes up (negative Y), blank goes down
+        } else if (side === 'bottom') {
+            tabDir = direction;   // Tab goes down (positive Y), blank goes up
+        } else if (side === 'right') {
+            tabDir = direction;   // Tab goes right (positive X), blank goes left
+        } else { // left
+            tabDir = -direction;  // Tab goes left (negative X), blank goes right
+        }
 
         if (orientation === 'horizontal') {
             const dir = x2 > x1 ? 1 : -1;
-            const tabDir = direction;  // 1 = tab goes down (positive y), -1 = goes up
             const midX = x1 + dir * length / 2;
 
             // Draw to start of neck
@@ -296,7 +347,6 @@ class PuzzleCutter {
 
         } else {
             const dir = y2 > y1 ? 1 : -1;
-            const tabDir = direction;  // 1 = tab goes right (positive x), -1 = goes left
             const midY = y1 + dir * length / 2;
 
             // Draw to start of neck

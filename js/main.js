@@ -4,7 +4,7 @@
  * @version 1.0.0
  */
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 let puzzleCutter;
 let puzzleEngine;
@@ -138,6 +138,8 @@ function updateStats() {
     // Update touch info
     if (puzzleEngine.input.isDragging) {
         touchInfo.textContent = 'Moving piece';
+    } else if (puzzleEngine.input.isPinching) {
+        touchInfo.textContent = 'Zooming';
     } else if (puzzleEngine.input.isPanning) {
         touchInfo.textContent = 'Panning';
     } else if (puzzleEngine.input.isSelecting) {

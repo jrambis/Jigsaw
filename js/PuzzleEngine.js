@@ -268,24 +268,24 @@ class PuzzleEngine {
             const pinchRatio = currentDistance / this.input.pinchStartDistance;
             const newScale = Math.max(0.1, Math.min(5, this.input.pinchStartScale * pinchRatio));
 
-            // Calculate new center point
+            // Calculate current center point between fingers
             const newCenterX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
             const newCenterY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
 
-            // Get world position under pinch center before scale change
-            const worldBefore = this.screenToWorld(this.input.pinchCenterX, this.input.pinchCenterY);
+            // Get world position under pinch center BEFORE scale change
+            const worldPos = this.screenToWorld(this.input.pinchCenterX, this.input.pinchCenterY);
 
             // Apply new scale
             this.camera.scale = newScale;
 
-            // Get world position under pinch center after scale change
-            const worldAfter = this.screenToWorld(this.input.pinchCenterX, this.input.pinchCenterY);
+            // Convert world position back to screen - it will be offset now
+            const screenPos = this.worldToScreen(worldPos.x, worldPos.y);
 
-            // Adjust camera to keep pinch center stationary
-            this.camera.x += (worldAfter.x - worldBefore.x) * this.camera.scale;
-            this.camera.y += (worldAfter.y - worldBefore.y) * this.camera.scale;
+            // Adjust camera so the world point stays under the pinch center
+            this.camera.x += this.input.pinchCenterX - screenPos.x;
+            this.camera.y += this.input.pinchCenterY - screenPos.y;
 
-            // Also allow panning while pinching by tracking center movement
+            // Also allow panning while pinching by tracking finger movement
             const centerDx = newCenterX - this.input.pinchCenterX;
             const centerDy = newCenterY - this.input.pinchCenterY;
             this.camera.x += centerDx;

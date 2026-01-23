@@ -1,6 +1,6 @@
 /**
  * PuzzleEngine - Manages puzzle rendering, interaction, and game logic
- * Includes touch controls: tap=pan, hold-drag=move piece, edge panning, selection box
+ * Includes touch controls: tap=pan, hold-drag=move piece, edge panning, pinch-to-zoom
  */
 class PuzzleEngine {
     constructor(canvas) {
@@ -21,6 +21,7 @@ class PuzzleEngine {
             isDragging: false,
             isPanning: false,
             isSelecting: false,
+            isPinching: false,
             startX: 0,
             startY: 0,
             currentX: 0,
@@ -28,6 +29,11 @@ class PuzzleEngine {
             // Screen coordinates for panning (separate from world coords)
             panStartScreenX: 0,
             panStartScreenY: 0,
+            // Pinch-to-zoom state
+            pinchStartDistance: 0,
+            pinchStartScale: 1,
+            pinchCenterX: 0,
+            pinchCenterY: 0,
             dragStartTime: 0,
             holdTimer: null,
             touchCount: 0
@@ -175,18 +181,24 @@ class PuzzleEngine {
             }
 
         } else if (touches.length === 2) {
-            // Two-finger touch - selection box
+            // Two-finger touch - pinch-to-zoom
             this.clearHoldTimer();
-            this.input.isSelecting = true;
+            this.input.isPanning = false;
+            this.input.isPinching = true;
 
             const touch1 = touches[0];
+            const touch2 = touches[1];
             const rect = this.canvas.getBoundingClientRect();
-            const worldPos = this.screenToWorld(touch1.clientX - rect.left, touch1.clientY - rect.top);
 
-            this.input.startX = worldPos.x;
-            this.input.startY = worldPos.y;
-            this.input.currentX = worldPos.x;
-            this.input.currentY = worldPos.y;
+            // Calculate initial distance between two fingers
+            const dx = touch2.clientX - touch1.clientX;
+            const dy = touch2.clientY - touch1.clientY;
+            this.input.pinchStartDistance = Math.sqrt(dx * dx + dy * dy);
+            this.input.pinchStartScale = this.camera.scale;
+
+            // Calculate center point between fingers (in screen coords)
+            this.input.pinchCenterX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
+            this.input.pinchCenterY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
         }
     }
 
@@ -241,14 +253,47 @@ class PuzzleEngine {
                 this.input.panStartScreenY = screenY;
             }
 
-        } else if (e.touches.length === 2 && this.input.isSelecting) {
-            // Update selection box
-            const touch = e.touches[0];
+        } else if (e.touches.length === 2 && this.input.isPinching) {
+            // Pinch-to-zoom
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
             const rect = this.canvas.getBoundingClientRect();
-            const worldPos = this.screenToWorld(touch.clientX - rect.left, touch.clientY - rect.top);
 
-            this.input.currentX = worldPos.x;
-            this.input.currentY = worldPos.y;
+            // Calculate current distance between fingers
+            const dx = touch2.clientX - touch1.clientX;
+            const dy = touch2.clientY - touch1.clientY;
+            const currentDistance = Math.sqrt(dx * dx + dy * dy);
+
+            // Calculate new scale based on pinch ratio
+            const pinchRatio = currentDistance / this.input.pinchStartDistance;
+            const newScale = Math.max(0.1, Math.min(5, this.input.pinchStartScale * pinchRatio));
+
+            // Calculate new center point
+            const newCenterX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
+            const newCenterY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
+
+            // Get world position under pinch center before scale change
+            const worldBefore = this.screenToWorld(this.input.pinchCenterX, this.input.pinchCenterY);
+
+            // Apply new scale
+            this.camera.scale = newScale;
+
+            // Get world position under pinch center after scale change
+            const worldAfter = this.screenToWorld(this.input.pinchCenterX, this.input.pinchCenterY);
+
+            // Adjust camera to keep pinch center stationary
+            this.camera.x += (worldAfter.x - worldBefore.x) * this.camera.scale;
+            this.camera.y += (worldAfter.y - worldBefore.y) * this.camera.scale;
+
+            // Also allow panning while pinching by tracking center movement
+            const centerDx = newCenterX - this.input.pinchCenterX;
+            const centerDy = newCenterY - this.input.pinchCenterY;
+            this.camera.x += centerDx;
+            this.camera.y += centerDy;
+
+            // Update pinch center for next frame
+            this.input.pinchCenterX = newCenterX;
+            this.input.pinchCenterY = newCenterY;
         }
     }
 
@@ -266,6 +311,10 @@ class PuzzleEngine {
             this.checkSnapping();
             this.input.isDragging = false;
             this.edgePanning.active = false;
+
+        } else if (this.input.isPinching) {
+            // End pinch-to-zoom
+            this.input.isPinching = false;
 
         } else if (this.input.isSelecting) {
             // Complete selection

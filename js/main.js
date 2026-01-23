@@ -113,17 +113,7 @@ async function startNewPuzzle() {
  * @returns {string} Image path
  */
 function getImagePath() {
-    const selected = imageSelect.value;
-
-    // For now, use placeholder service
-    // In Phase 5, this will load from uploaded images
-    const imageMap = {
-        'sample1.jpg': 'https://picsum.photos/1200/800?random=1',
-        'sample2.jpg': 'https://picsum.photos/1200/800?random=2',
-        'sample3.jpg': 'https://picsum.photos/1200/800?random=3'
-    };
-
-    return imageMap[selected] || imageMap['sample1.jpg'];
+    return imageSelect.value;
 }
 
 /**

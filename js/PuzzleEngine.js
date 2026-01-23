@@ -185,6 +185,7 @@ class PuzzleEngine {
             this.clearHoldTimer();
             this.input.isPanning = false;
             this.input.isPinching = true;
+            this._pinchLogCount = 0; // Reset log counter
 
             const touch1 = touches[0];
             const touch2 = touches[1];
@@ -199,6 +200,13 @@ class PuzzleEngine {
             // Calculate center point between fingers (in screen coords)
             this.input.pinchCenterX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
             this.input.pinchCenterY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
+
+            console.log('=== PINCH START ===');
+            console.log('Initial distance:', this.input.pinchStartDistance.toFixed(1));
+            console.log('Initial scale:', this.input.pinchStartScale.toFixed(3));
+            console.log('Pinch center:', this.input.pinchCenterX.toFixed(1), this.input.pinchCenterY.toFixed(1));
+            console.log('Camera pos:', this.camera.x.toFixed(1), this.camera.y.toFixed(1));
+            console.log('===================');
         }
     }
 
@@ -272,6 +280,11 @@ class PuzzleEngine {
             const newCenterX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
             const newCenterY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
 
+            // Store old values for logging
+            const oldScale = this.camera.scale;
+            const oldCamX = this.camera.x;
+            const oldCamY = this.camera.y;
+
             // Get world position under pinch center BEFORE scale change
             const worldPos = this.screenToWorld(this.input.pinchCenterX, this.input.pinchCenterY);
 
@@ -281,15 +294,34 @@ class PuzzleEngine {
             // Convert world position back to screen - it will be offset now
             const screenPos = this.worldToScreen(worldPos.x, worldPos.y);
 
+            // Calculate zoom adjustment
+            const zoomAdjustX = this.input.pinchCenterX - screenPos.x;
+            const zoomAdjustY = this.input.pinchCenterY - screenPos.y;
+
             // Adjust camera so the world point stays under the pinch center
-            this.camera.x += this.input.pinchCenterX - screenPos.x;
-            this.camera.y += this.input.pinchCenterY - screenPos.y;
+            this.camera.x += zoomAdjustX;
+            this.camera.y += zoomAdjustY;
 
             // Also allow panning while pinching by tracking finger movement
             const centerDx = newCenterX - this.input.pinchCenterX;
             const centerDy = newCenterY - this.input.pinchCenterY;
             this.camera.x += centerDx;
             this.camera.y += centerDy;
+
+            // Throttled logging (every 10th frame approx)
+            if (!this._pinchLogCount) this._pinchLogCount = 0;
+            this._pinchLogCount++;
+            if (this._pinchLogCount % 10 === 0) {
+                console.log('=== PINCH ZOOM ===');
+                console.log('Scale:', oldScale.toFixed(3), '->', newScale.toFixed(3), '(ratio:', pinchRatio.toFixed(3) + ')');
+                console.log('Pinch center (screen):', this.input.pinchCenterX.toFixed(1), this.input.pinchCenterY.toFixed(1));
+                console.log('World pos under center:', worldPos.x.toFixed(1), worldPos.y.toFixed(1));
+                console.log('Screen pos after scale:', screenPos.x.toFixed(1), screenPos.y.toFixed(1));
+                console.log('Zoom adjust:', zoomAdjustX.toFixed(1), zoomAdjustY.toFixed(1));
+                console.log('Pan adjust:', centerDx.toFixed(1), centerDy.toFixed(1));
+                console.log('Camera:', oldCamX.toFixed(1), oldCamY.toFixed(1), '->', this.camera.x.toFixed(1), this.camera.y.toFixed(1));
+                console.log('==================');
+            }
 
             // Update pinch center for next frame
             this.input.pinchCenterX = newCenterX;
@@ -314,6 +346,10 @@ class PuzzleEngine {
 
         } else if (this.input.isPinching) {
             // End pinch-to-zoom
+            console.log('=== PINCH END ===');
+            console.log('Final scale:', this.camera.scale.toFixed(3));
+            console.log('Final camera:', this.camera.x.toFixed(1), this.camera.y.toFixed(1));
+            console.log('=================');
             this.input.isPinching = false;
 
         } else if (this.input.isSelecting) {

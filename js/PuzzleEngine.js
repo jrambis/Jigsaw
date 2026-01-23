@@ -25,6 +25,9 @@ class PuzzleEngine {
             startY: 0,
             currentX: 0,
             currentY: 0,
+            // Screen coordinates for panning (separate from world coords)
+            panStartScreenX: 0,
+            panStartScreenY: 0,
             dragStartTime: 0,
             holdTimer: null,
             touchCount: 0
@@ -145,12 +148,17 @@ class PuzzleEngine {
             // Single touch - could be pan or piece drag
             const touch = touches[0];
             const rect = this.canvas.getBoundingClientRect();
-            const worldPos = this.screenToWorld(touch.clientX - rect.left, touch.clientY - rect.top);
+            const screenX = touch.clientX - rect.left;
+            const screenY = touch.clientY - rect.top;
+            const worldPos = this.screenToWorld(screenX, screenY);
 
             this.input.startX = worldPos.x;
             this.input.startY = worldPos.y;
             this.input.currentX = worldPos.x;
             this.input.currentY = worldPos.y;
+            // Store screen coords for panning
+            this.input.panStartScreenX = screenX;
+            this.input.panStartScreenY = screenY;
             this.input.dragStartTime = Date.now();
 
             // Check if touching a piece
@@ -192,13 +200,15 @@ class PuzzleEngine {
         if (e.touches.length === 1) {
             const touch = e.touches[0];
             const rect = this.canvas.getBoundingClientRect();
-            const worldPos = this.screenToWorld(touch.clientX - rect.left, touch.clientY - rect.top);
+            const screenX = touch.clientX - rect.left;
+            const screenY = touch.clientY - rect.top;
+            const worldPos = this.screenToWorld(screenX, screenY);
 
-            // If moved more than 10px, cancel hold timer and activate pan if not dragging
-            const dx = Math.abs(worldPos.x - this.input.startX);
-            const dy = Math.abs(worldPos.y - this.input.startY);
+            // If moved more than 10px in screen space, cancel hold timer and activate pan if not dragging
+            const screenDx = Math.abs(screenX - this.input.panStartScreenX);
+            const screenDy = Math.abs(screenY - this.input.panStartScreenY);
 
-            if ((dx > 10 || dy > 10) && !this.input.isDragging) {
+            if ((screenDx > 10 || screenDy > 10) && !this.input.isDragging) {
                 this.clearHoldTimer();
                 if (!this.input.isPanning) {
                     this.input.isPanning = true;
@@ -209,7 +219,7 @@ class PuzzleEngine {
             this.input.currentY = worldPos.y;
 
             if (this.input.isDragging) {
-                // Move selected pieces
+                // Move selected pieces in world coordinates
                 this.moveSelectedPieces(
                     worldPos.x - this.input.startX,
                     worldPos.y - this.input.startY
@@ -218,14 +228,17 @@ class PuzzleEngine {
                 this.input.startY = worldPos.y;
 
                 // Edge panning
-                this.updateEdgePanning(touch.clientX - rect.left, touch.clientY - rect.top);
+                this.updateEdgePanning(screenX, screenY);
 
             } else if (this.input.isPanning) {
-                // Pan camera
-                const dx = worldPos.x - this.input.startX;
-                const dy = worldPos.y - this.input.startY;
+                // Pan camera using screen coordinates (not world!)
+                const dx = screenX - this.input.panStartScreenX;
+                const dy = screenY - this.input.panStartScreenY;
                 this.camera.x += dx;
                 this.camera.y += dy;
+                // Update pan start for next frame
+                this.input.panStartScreenX = screenX;
+                this.input.panStartScreenY = screenY;
             }
 
         } else if (e.touches.length === 2 && this.input.isSelecting) {
@@ -272,12 +285,17 @@ class PuzzleEngine {
      */
     handlePointerDown(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const worldPos = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        const worldPos = this.screenToWorld(screenX, screenY);
 
         this.input.startX = worldPos.x;
         this.input.startY = worldPos.y;
         this.input.currentX = worldPos.x;
         this.input.currentY = worldPos.y;
+        // Store screen coords for panning
+        this.input.panStartScreenX = screenX;
+        this.input.panStartScreenY = screenY;
 
         if (e.shiftKey) {
             // Shift + drag = selection box
@@ -300,13 +318,15 @@ class PuzzleEngine {
      */
     handlePointerMove(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const worldPos = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        const worldPos = this.screenToWorld(screenX, screenY);
 
         this.input.currentX = worldPos.x;
         this.input.currentY = worldPos.y;
 
         if (this.input.isDragging) {
-            // Move selected pieces
+            // Move selected pieces in world coordinates
             this.moveSelectedPieces(
                 worldPos.x - this.input.startX,
                 worldPos.y - this.input.startY
@@ -315,11 +335,14 @@ class PuzzleEngine {
             this.input.startY = worldPos.y;
 
         } else if (this.input.isPanning) {
-            // Pan camera
-            const dx = worldPos.x - this.input.startX;
-            const dy = worldPos.y - this.input.startY;
+            // Pan camera using screen coordinates (not world!)
+            const dx = screenX - this.input.panStartScreenX;
+            const dy = screenY - this.input.panStartScreenY;
             this.camera.x += dx;
             this.camera.y += dy;
+            // Update pan start for next frame
+            this.input.panStartScreenX = screenX;
+            this.input.panStartScreenY = screenY;
         }
     }
 

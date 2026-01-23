@@ -112,22 +112,83 @@ class PuzzleCutter {
             }
         }
 
+        // Generate shuffled scatter positions within puzzle bounds
+        const scatterPositions = this.generateShuffledPositions();
+
         // Create pieces
         let pieceId = 0;
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
                 const piece = this.createPiece(
-                    pieceId++,
+                    pieceId,
                     row,
                     col,
                     horizontalEdges,
-                    verticalEdges
+                    verticalEdges,
+                    scatterPositions[pieceId]
                 );
+                pieceId++;
                 pieces.push(piece);
             }
         }
 
         return pieces;
+    }
+
+    /**
+     * Generate shuffled positions for piece scattering
+     * Creates a grid of positions within puzzle bounds and shuffles them
+     * Ensures no piece starts at its correct position
+     * @returns {Array} Array of {x, y} positions
+     */
+    generateShuffledPositions() {
+        const positions = [];
+        const totalPieces = this.rows * this.cols;
+
+        // Create a grid of positions within the puzzle area
+        const gridCols = this.cols;
+        const gridRows = this.rows;
+
+        for (let row = 0; row < gridRows; row++) {
+            for (let col = 0; col < gridCols; col++) {
+                // Position within cell with some randomness
+                const cellWidth = this.image.width / gridCols;
+                const cellHeight = this.image.height / gridRows;
+
+                // Add random offset within cell (keep 20% margin)
+                const margin = 0.2;
+                const x = col * cellWidth + cellWidth * margin + Math.random() * cellWidth * (1 - 2 * margin);
+                const y = row * cellHeight + cellHeight * margin + Math.random() * cellHeight * (1 - 2 * margin);
+
+                positions.push({ x, y, originalRow: row, originalCol: col });
+            }
+        }
+
+        // Fisher-Yates shuffle - but ensure no piece ends up at its original position
+        for (let i = positions.length - 1; i > 0; i--) {
+            // Pick a random index that's not the same as i (to avoid piece staying in place)
+            let j;
+            do {
+                j = Math.floor(Math.random() * (i + 1));
+            } while (j === i && positions.length > 2);
+
+            [positions[i], positions[j]] = [positions[j], positions[i]];
+        }
+
+        // Final check: ensure no piece is at its original grid position
+        // If a piece ended up in its own cell, swap it with a neighbor
+        for (let i = 0; i < positions.length; i++) {
+            const pieceRow = Math.floor(i / this.cols);
+            const pieceCol = i % this.cols;
+
+            if (positions[i].originalRow === pieceRow && positions[i].originalCol === pieceCol) {
+                // Swap with next position (wrap around if needed)
+                const swapIdx = (i + 1) % positions.length;
+                [positions[i], positions[swapIdx]] = [positions[swapIdx], positions[i]];
+            }
+        }
+
+        return positions;
     }
 
     /**
@@ -137,9 +198,10 @@ class PuzzleCutter {
      * @param {number} col - Column index
      * @param {Array} hEdges - Horizontal edge patterns
      * @param {Array} vEdges - Vertical edge patterns
+     * @param {Object} scatterPos - Pre-computed scatter position {x, y}
      * @returns {Object} Piece object
      */
-    createPiece(id, row, col, hEdges, vEdges) {
+    createPiece(id, row, col, hEdges, vEdges, scatterPos) {
         const x = col * this.pieceWidth;
         const y = row * this.pieceHeight;
 
@@ -202,10 +264,9 @@ class PuzzleCutter {
         );
         ctx.restore();
 
-        // Randomize initial position (scattered around canvas)
-        const scatterRange = 500;
-        const randomX = x + (Math.random() - 0.5) * scatterRange;
-        const randomY = y + (Math.random() - 0.5) * scatterRange;
+        // Use pre-computed shuffled scatter position (within puzzle bounds)
+        const scatterX = scatterPos.x;
+        const scatterY = scatterPos.y;
 
         return {
             id,
@@ -213,10 +274,10 @@ class PuzzleCutter {
             col,
             correctX: x,
             correctY: y,
-            x: randomX,
-            y: randomY,
-            currentX: randomX,
-            currentY: randomY,
+            x: scatterX,
+            y: scatterY,
+            currentX: scatterX,
+            currentY: scatterY,
             width: canvas.width,
             height: canvas.height,
             tabs,
@@ -225,6 +286,7 @@ class PuzzleCutter {
             canvas,
             isPlaced: false,
             isSelected: false,
+            isLocked: false,
             rotation: 0,
             zIndex: id
         };

@@ -44,7 +44,7 @@ class PuzzleEngine {
             holdDelay: 300, // ms to wait before activating piece drag
             edgePanThreshold: 60, // pixels from edge to trigger panning
             edgePanSpeed: 5,
-            snapDistance: 20 // Distance for auto-snapping pieces
+            snapDistance: 40 // Distance for auto-snapping pieces
         };
 
         // Edge panning
@@ -543,6 +543,9 @@ class PuzzleEngine {
         const sorted = [...this.pieces].sort((a, b) => b.zIndex - a.zIndex);
 
         for (const piece of sorted) {
+            // Skip locked pieces - they can't be selected
+            if (piece.isLocked) continue;
+
             if (this.isPointInPiece(x, y, piece)) {
                 return piece;
             }
@@ -670,25 +673,54 @@ class PuzzleEngine {
     checkSnapping() {
         const snapDist = this.touchSettings.snapDistance;
 
-        this.selectedPieces.forEach(piece => {
-            // Check snap to correct (final) position
+        // First check if any selected piece can snap to its correct final position
+        // If so, snap and lock the entire group
+        for (const piece of this.selectedPieces) {
             const dx = piece.correctX - piece.currentX;
             const dy = piece.correctY - piece.currentY;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
             if (distance < snapDist) {
+                // Snap the entire group to correct positions and lock them
+                this.snapGroupToFinalPosition(piece.groupId, dx, dy);
+                return; // Group is locked, done snapping
+            }
+        }
+
+        // If no final position snap, check for adjacent piece snapping
+        this.selectedPieces.forEach(piece => {
+            this.checkAdjacentSnapping(piece, snapDist);
+        });
+    }
+
+    /**
+     * Snap entire group to final correct positions and lock
+     * @param {number} groupId - Group to snap
+     * @param {number} offsetX - X offset to apply
+     * @param {number} offsetY - Y offset to apply
+     */
+    snapGroupToFinalPosition(groupId, offsetX, offsetY) {
+        const pieceIds = this.groups.get(groupId);
+        if (!pieceIds) return;
+
+        pieceIds.forEach(pieceId => {
+            const piece = this.pieces.find(p => p.id === pieceId);
+            if (piece) {
+                // Snap to exact correct position
                 piece.currentX = piece.correctX;
                 piece.currentY = piece.correctY;
+                piece.isLocked = true;
+                piece.isSelected = false;
 
                 if (!piece.isPlaced) {
                     piece.isPlaced = true;
                     this.stats.placedPieces++;
                 }
             }
-
-            // Check snap to adjacent pieces
-            this.checkAdjacentSnapping(piece, snapDist);
         });
+
+        // Clear selection since pieces are now locked
+        this.selectedPieces = [];
     }
 
     /**
@@ -838,8 +870,16 @@ class PuzzleEngine {
         this.ctx.translate(this.camera.x, this.camera.y);
         this.ctx.scale(this.camera.scale, this.camera.scale);
 
-        // Sort pieces by z-index
-        const sortedPieces = [...this.pieces].sort((a, b) => a.zIndex - b.zIndex);
+        // Draw puzzle border first (behind pieces)
+        this.drawPuzzleBorder();
+
+        // Sort pieces by z-index, with locked pieces drawn first (at bottom)
+        const sortedPieces = [...this.pieces].sort((a, b) => {
+            // Locked pieces go first (lower z-index effectively)
+            if (a.isLocked && !b.isLocked) return -1;
+            if (!a.isLocked && b.isLocked) return 1;
+            return a.zIndex - b.zIndex;
+        });
 
         // Draw pieces
         sortedPieces.forEach(piece => {
@@ -881,17 +921,7 @@ class PuzzleEngine {
             this.drawPieceOutline(piece);
         }
 
-        // Show correct position outline (for debugging)
-        if (piece.isPlaced) {
-            this.ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
-            this.ctx.lineWidth = 2 / this.camera.scale;
-            this.ctx.strokeRect(
-                piece.correctX,
-                piece.correctY,
-                piece.width,
-                piece.height
-            );
-        }
+        // Locked pieces don't need any special outline - they're in final position
 
         this.ctx.restore();
     }
@@ -1014,6 +1044,39 @@ class PuzzleEngine {
             );
             this.ctx.lineTo(x2, y2);
         }
+    }
+
+    /**
+     * Draw puzzle border showing the target area
+     */
+    drawPuzzleBorder() {
+        if (this.pieces.length === 0) return;
+
+        // Get the first piece to determine tabPadding
+        const firstPiece = this.pieces[0];
+        const tabPadding = firstPiece.tabPadding;
+
+        // Calculate actual image bounds (without tab padding)
+        // correctX/Y already account for the image position, but we need the pure image area
+        const bounds = this.calculatePuzzleBounds();
+
+        // The bounds include piece dimensions which have tabPadding built in
+        // We need to find the actual image rectangle
+        const imageX = bounds.minX + tabPadding;
+        const imageY = bounds.minY + tabPadding;
+        const imageWidth = (bounds.maxX - bounds.minX) - tabPadding * 2;
+        const imageHeight = (bounds.maxY - bounds.minY) - tabPadding * 2;
+
+        // Draw dashed border
+        this.ctx.save();
+        this.ctx.strokeStyle = '#999';
+        this.ctx.lineWidth = 2 / this.camera.scale;
+        this.ctx.setLineDash([10 / this.camera.scale, 5 / this.camera.scale]);
+
+        this.ctx.strokeRect(imageX, imageY, imageWidth, imageHeight);
+
+        this.ctx.setLineDash([]);
+        this.ctx.restore();
     }
 
     /**

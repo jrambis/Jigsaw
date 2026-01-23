@@ -243,7 +243,7 @@ class PuzzleCutter {
     }
 
     /**
-     * Draw a tab or blank on an edge
+     * Draw a tab or blank on an edge with classic jigsaw shape
      * @param {CanvasRenderingContext2D} ctx - Canvas context
      * @param {number} x1 - Start x
      * @param {number} y1 - Start y
@@ -255,25 +255,75 @@ class PuzzleCutter {
      */
     drawTab(ctx, x1, y1, x2, y2, direction, size, orientation) {
         const length = orientation === 'horizontal' ? Math.abs(x2 - x1) : Math.abs(y2 - y1);
-        const center = length / 2;
-        const tabWidth = size * 1.2;
-        const tabHeight = size * direction;
+
+        // Tab dimensions
+        const neckWidth = size * 0.5;      // Width of the narrow neck
+        const headWidth = size * 0.85;     // Width of the bulbous head
+        const headHeight = size * 0.9;     // How far the head extends
+        const neckHeight = size * 0.15;    // How far the neck extends before the head
 
         if (orientation === 'horizontal') {
             const dir = x2 > x1 ? 1 : -1;
-            ctx.lineTo(x1 + dir * (center - tabWidth / 2), y1);
-            ctx.quadraticCurveTo(
-                x1 + dir * center, y1 + tabHeight,
-                x1 + dir * (center + tabWidth / 2), y1
+            const tabDir = direction;  // 1 = tab goes down (positive y), -1 = goes up
+            const midX = x1 + dir * length / 2;
+
+            // Draw to start of neck
+            ctx.lineTo(midX - dir * neckWidth, y1);
+
+            // Left side of neck curving into head
+            ctx.bezierCurveTo(
+                midX - dir * neckWidth, y1 + tabDir * neckHeight,           // Control 1: straight down
+                midX - dir * headWidth, y1 + tabDir * neckHeight,           // Control 2: out to head width
+                midX - dir * headWidth, y1 + tabDir * (neckHeight + headHeight * 0.5)  // End: side of head
             );
+
+            // Bottom curve of head (left to right)
+            ctx.bezierCurveTo(
+                midX - dir * headWidth, y1 + tabDir * (neckHeight + headHeight),  // Control 1: down
+                midX + dir * headWidth, y1 + tabDir * (neckHeight + headHeight),  // Control 2: across
+                midX + dir * headWidth, y1 + tabDir * (neckHeight + headHeight * 0.5)   // End: right side of head
+            );
+
+            // Right side of head curving back to neck
+            ctx.bezierCurveTo(
+                midX + dir * headWidth, y1 + tabDir * neckHeight,           // Control 1: up to neck level
+                midX + dir * neckWidth, y1 + tabDir * neckHeight,           // Control 2: in to neck width
+                midX + dir * neckWidth, y1                                   // End: back at edge
+            );
+
+            // Continue to end point
             ctx.lineTo(x2, y2);
+
         } else {
             const dir = y2 > y1 ? 1 : -1;
-            ctx.lineTo(x1, y1 + dir * (center - tabWidth / 2));
-            ctx.quadraticCurveTo(
-                x1 + tabHeight, y1 + dir * center,
-                x1, y1 + dir * (center + tabWidth / 2)
+            const tabDir = direction;  // 1 = tab goes right (positive x), -1 = goes left
+            const midY = y1 + dir * length / 2;
+
+            // Draw to start of neck
+            ctx.lineTo(x1, midY - dir * neckWidth);
+
+            // Top side of neck curving into head
+            ctx.bezierCurveTo(
+                x1 + tabDir * neckHeight, midY - dir * neckWidth,           // Control 1: straight out
+                x1 + tabDir * neckHeight, midY - dir * headWidth,           // Control 2: up to head width
+                x1 + tabDir * (neckHeight + headHeight * 0.5), midY - dir * headWidth  // End: top of head
             );
+
+            // Side curve of head (top to bottom)
+            ctx.bezierCurveTo(
+                x1 + tabDir * (neckHeight + headHeight), midY - dir * headWidth,  // Control 1: out
+                x1 + tabDir * (neckHeight + headHeight), midY + dir * headWidth,  // Control 2: down
+                x1 + tabDir * (neckHeight + headHeight * 0.5), midY + dir * headWidth   // End: bottom of head
+            );
+
+            // Bottom side of head curving back to neck
+            ctx.bezierCurveTo(
+                x1 + tabDir * neckHeight, midY + dir * headWidth,           // Control 1: back to neck depth
+                x1 + tabDir * neckHeight, midY + dir * neckWidth,           // Control 2: in to neck width
+                x1, midY + dir * neckWidth                                   // End: back at edge
+            );
+
+            // Continue to end point
             ctx.lineTo(x2, y2);
         }
     }

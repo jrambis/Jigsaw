@@ -178,12 +178,25 @@ class PuzzleCutter {
         this.drawPieceShape(ctx, tabs, tabSize);
 
         // Draw the image portion
+        // We need to draw extra image area to cover protruding tabs
+        // Calculate source rectangle (clamped to image bounds)
+        const srcX = Math.max(0, x - tabSize);
+        const srcY = Math.max(0, y - tabSize);
+        const srcRight = Math.min(this.image.width, x + this.pieceWidth + tabSize);
+        const srcBottom = Math.min(this.image.height, y + this.pieceHeight + tabSize);
+        const srcWidth = srcRight - srcX;
+        const srcHeight = srcBottom - srcY;
+
+        // Calculate destination rectangle (adjusted for clamping)
+        const destX = tabSize - (x - srcX);
+        const destY = tabSize - (y - srcY);
+
         ctx.save();
         ctx.clip();
         ctx.drawImage(
             this.image,
-            x, y, this.pieceWidth, this.pieceHeight,
-            tabSize, tabSize, this.pieceWidth, this.pieceHeight
+            srcX, srcY, srcWidth, srcHeight,
+            destX, destY, srcWidth, srcHeight
         );
         ctx.restore();
 

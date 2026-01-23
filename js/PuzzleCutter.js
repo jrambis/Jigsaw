@@ -57,9 +57,9 @@ class PuzzleCutter {
         this.cols = Math.round(Math.sqrt(targetCount * aspectRatio));
         this.rows = Math.round(this.cols / aspectRatio);
 
-        // Ensure minimum of 3x3
-        this.cols = Math.max(3, this.cols);
-        this.rows = Math.max(3, this.rows);
+        // Ensure minimum of 2x2
+        this.cols = Math.max(2, this.cols);
+        this.rows = Math.max(2, this.rows);
 
         this.pieceWidth = this.image.width / this.cols;
         this.pieceHeight = this.image.height / this.rows;

@@ -64,6 +64,11 @@ class PuzzleEngine {
             totalPieces: 0
         };
 
+        // Piece groups - connected pieces move together
+        // Map of groupId -> Set of piece IDs
+        this.groups = new Map();
+        this.nextGroupId = 0;
+
         this.setupEventListeners();
         this.resizeCanvas();
     }
@@ -77,6 +82,15 @@ class PuzzleEngine {
         this.stats.totalPieces = pieces.length;
         this.stats.placedPieces = 0;
         this.selectedPieces = [];
+
+        // Initialize each piece in its own group
+        this.groups = new Map();
+        this.nextGroupId = 0;
+        pieces.forEach(piece => {
+            const groupId = this.nextGroupId++;
+            piece.groupId = groupId;
+            this.groups.set(groupId, new Set([piece.id]));
+        });
 
         // Center camera on puzzle
         if (pieces.length > 0) {
@@ -492,8 +506,19 @@ class PuzzleEngine {
         this.input.isDragging = true;
         this.input.isPanning = false;
 
-        if (!piece.isSelected) {
-            this.clearSelection();
+        // Select all pieces in the same group
+        this.clearSelection();
+        const groupPieceIds = this.groups.get(piece.groupId);
+        if (groupPieceIds) {
+            groupPieceIds.forEach(pieceId => {
+                const p = this.pieces.find(pp => pp.id === pieceId);
+                if (p) {
+                    p.isSelected = true;
+                    this.selectedPieces.push(p);
+                }
+            });
+        } else {
+            // Fallback if no group found
             piece.isSelected = true;
             this.selectedPieces = [piece];
         }
@@ -635,18 +660,18 @@ class PuzzleEngine {
     }
 
     /**
-     * Check for piece snapping
+     * Check for piece snapping (to correct position and to adjacent pieces)
      */
     checkSnapping() {
         const snapDist = this.touchSettings.snapDistance;
 
         this.selectedPieces.forEach(piece => {
+            // Check snap to correct (final) position
             const dx = piece.correctX - piece.currentX;
             const dy = piece.correctY - piece.currentY;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
             if (distance < snapDist) {
-                // Snap to correct position
                 piece.currentX = piece.correctX;
                 piece.currentY = piece.correctY;
 
@@ -655,7 +680,91 @@ class PuzzleEngine {
                     this.stats.placedPieces++;
                 }
             }
+
+            // Check snap to adjacent pieces
+            this.checkAdjacentSnapping(piece, snapDist);
         });
+    }
+
+    /**
+     * Check if piece can snap to any adjacent pieces
+     * @param {Object} piece - The piece to check
+     * @param {number} snapDist - Snap distance threshold
+     */
+    checkAdjacentSnapping(piece, snapDist) {
+        // Find adjacent pieces (up, down, left, right) that are NOT in same group
+        const neighbors = this.pieces.filter(p => {
+            if (p.id === piece.id) return false;
+            if (p.groupId === piece.groupId) return false; // Skip same group
+            const rowDiff = Math.abs(p.row - piece.row);
+            const colDiff = Math.abs(p.col - piece.col);
+            // Adjacent = exactly 1 step in row OR col, not both
+            return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+        });
+
+        neighbors.forEach(neighbor => {
+            // Calculate where this piece SHOULD be relative to neighbor
+            const expectedX = neighbor.currentX + (piece.col - neighbor.col) * (piece.width - piece.tabSize * 2);
+            const expectedY = neighbor.currentY + (piece.row - neighbor.row) * (piece.height - piece.tabSize * 2);
+
+            const dx = expectedX - piece.currentX;
+            const dy = expectedY - piece.currentY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < snapDist) {
+                // Snap this piece's entire group to align with neighbor
+                const offsetX = expectedX - piece.currentX;
+                const offsetY = expectedY - piece.currentY;
+                this.moveGroup(piece.groupId, offsetX, offsetY);
+
+                // Merge the groups
+                this.mergeGroups(piece.groupId, neighbor.groupId);
+            }
+        });
+    }
+
+    /**
+     * Move all pieces in a group by offset
+     * @param {number} groupId - Group to move
+     * @param {number} dx - X offset
+     * @param {number} dy - Y offset
+     */
+    moveGroup(groupId, dx, dy) {
+        const pieceIds = this.groups.get(groupId);
+        if (!pieceIds) return;
+
+        pieceIds.forEach(pieceId => {
+            const piece = this.pieces.find(p => p.id === pieceId);
+            if (piece) {
+                piece.currentX += dx;
+                piece.currentY += dy;
+            }
+        });
+    }
+
+    /**
+     * Merge two groups into one
+     * @param {number} groupA - First group ID
+     * @param {number} groupB - Second group ID
+     */
+    mergeGroups(groupA, groupB) {
+        if (groupA === groupB) return;
+
+        const piecesA = this.groups.get(groupA);
+        const piecesB = this.groups.get(groupB);
+        if (!piecesA || !piecesB) return;
+
+        // Merge B into A
+        piecesB.forEach(pieceId => {
+            piecesA.add(pieceId);
+            const piece = this.pieces.find(p => p.id === pieceId);
+            if (piece) {
+                piece.groupId = groupA;
+            }
+        });
+
+        // Remove group B
+        this.groups.delete(groupB);
     }
 
     /**

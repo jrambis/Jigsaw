@@ -57,7 +57,11 @@ A browser-based multiplayer jigsaw puzzle application designed for 2 users with 
   - Alt + drag to move pieces
   - Shift + drag for selection box
   - Mouse wheel to zoom
-- **Smart Snapping:** Pieces automatically snap to correct position when close
+- **Smart Snapping:** Pieces automatically snap to correct position when close (40px threshold)
+- **Piece Groups:** Connected pieces move together as a group
+- **Piece Locking:** Pieces lock in place once snapped to final correct position
+- **Puzzle Border:** Dashed outline shows target puzzle area
+- **Randomized Scattering:** Pieces start shuffled within puzzle bounds
 - **Progress Tracking:** Real-time completion percentage
 - **Responsive Design:** Works on desktop, tablet, and mobile devices
 

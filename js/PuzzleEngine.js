@@ -190,8 +190,9 @@ class PuzzleEngine {
                     this.activatePieceDrag(piece, worldPos.x, worldPos.y);
                 }, this.touchSettings.holdDelay);
             } else {
-                // No piece, activate pan immediately
+                // No piece, activate pan immediately and deselect
                 this.input.isPanning = true;
+                this.clearSelection();
             }
 
         } else if (touches.length === 2) {
@@ -406,8 +407,12 @@ class PuzzleEngine {
                 this.activatePieceDrag(piece, worldPos.x, worldPos.y);
             }
         } else {
-            // Regular drag = pan
+            // Regular drag = pan, deselect if clicking on empty space
             this.input.isPanning = true;
+            const piece = this.getPieceAt(worldPos.x, worldPos.y);
+            if (!piece) {
+                this.clearSelection();
+            }
         }
     }
 
@@ -704,8 +709,8 @@ class PuzzleEngine {
 
         neighbors.forEach(neighbor => {
             // Calculate where this piece SHOULD be relative to neighbor
-            const expectedX = neighbor.currentX + (piece.col - neighbor.col) * (piece.width - piece.tabSize * 2);
-            const expectedY = neighbor.currentY + (piece.row - neighbor.row) * (piece.height - piece.tabSize * 2);
+            const expectedX = neighbor.currentX + (piece.col - neighbor.col) * (piece.width - piece.tabPadding * 2);
+            const expectedY = neighbor.currentY + (piece.row - neighbor.row) * (piece.height - piece.tabPadding * 2);
 
             const dx = expectedX - piece.currentX;
             const dy = expectedY - piece.currentY;
@@ -869,16 +874,11 @@ class PuzzleEngine {
             piece.currentY
         );
 
-        // Highlight if selected
+        // Highlight if selected - draw outline following piece shape
         if (piece.isSelected) {
             this.ctx.strokeStyle = '#667eea';
             this.ctx.lineWidth = 3 / this.camera.scale;
-            this.ctx.strokeRect(
-                piece.currentX,
-                piece.currentY,
-                piece.width,
-                piece.height
-            );
+            this.drawPieceOutline(piece);
         }
 
         // Show correct position outline (for debugging)
@@ -894,6 +894,126 @@ class PuzzleEngine {
         }
 
         this.ctx.restore();
+    }
+
+    /**
+     * Draw piece outline following the actual piece shape
+     * @param {Object} piece - Piece to outline
+     */
+    drawPieceOutline(piece) {
+        const padding = piece.tabPadding;
+        const w = piece.width - padding * 2;
+        const h = piece.height - padding * 2;
+        const tabSize = piece.tabSize;
+
+        // Translate to piece position
+        const baseX = piece.currentX + padding;
+        const baseY = piece.currentY + padding;
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(baseX, baseY);
+
+        // Top edge
+        if (piece.tabs.top.direction !== 0) {
+            this.drawOutlineTab(baseX, baseY, baseX + w, baseY,
+                piece.tabs.top.direction, tabSize, 'horizontal', 'top', piece.tabs.top.variation);
+        } else {
+            this.ctx.lineTo(baseX + w, baseY);
+        }
+
+        // Right edge
+        if (piece.tabs.right.direction !== 0) {
+            this.drawOutlineTab(baseX + w, baseY, baseX + w, baseY + h,
+                piece.tabs.right.direction, tabSize, 'vertical', 'right', piece.tabs.right.variation);
+        } else {
+            this.ctx.lineTo(baseX + w, baseY + h);
+        }
+
+        // Bottom edge
+        if (piece.tabs.bottom.direction !== 0) {
+            this.drawOutlineTab(baseX + w, baseY + h, baseX, baseY + h,
+                piece.tabs.bottom.direction, tabSize, 'horizontal', 'bottom', piece.tabs.bottom.variation);
+        } else {
+            this.ctx.lineTo(baseX, baseY + h);
+        }
+
+        // Left edge
+        if (piece.tabs.left.direction !== 0) {
+            this.drawOutlineTab(baseX, baseY + h, baseX, baseY,
+                piece.tabs.left.direction, tabSize, 'vertical', 'left', piece.tabs.left.variation);
+        } else {
+            this.ctx.lineTo(baseX, baseY);
+        }
+
+        this.ctx.closePath();
+        this.ctx.stroke();
+    }
+
+    /**
+     * Draw a tab shape for the outline (mirrors PuzzleCutter.drawTab)
+     */
+    drawOutlineTab(x1, y1, x2, y2, direction, size, orientation, side, variation) {
+        const length = orientation === 'horizontal' ? Math.abs(x2 - x1) : Math.abs(y2 - y1);
+
+        const neckWidth = size * variation.neckWidth;
+        const headWidth = size * variation.headWidth;
+        const headHeight = size * variation.headHeight;
+        const neckHeight = size * variation.neckHeight;
+
+        let tabDir;
+        if (side === 'top') {
+            tabDir = -direction;
+        } else if (side === 'bottom') {
+            tabDir = direction;
+        } else if (side === 'right') {
+            tabDir = direction;
+        } else {
+            tabDir = -direction;
+        }
+
+        if (orientation === 'horizontal') {
+            const dir = x2 > x1 ? 1 : -1;
+            const midX = x1 + dir * length / 2;
+
+            this.ctx.lineTo(midX - dir * neckWidth, y1);
+            this.ctx.bezierCurveTo(
+                midX - dir * neckWidth, y1 + tabDir * neckHeight,
+                midX - dir * headWidth, y1 + tabDir * neckHeight,
+                midX - dir * headWidth, y1 + tabDir * (neckHeight + headHeight * 0.5)
+            );
+            this.ctx.bezierCurveTo(
+                midX - dir * headWidth, y1 + tabDir * (neckHeight + headHeight),
+                midX + dir * headWidth, y1 + tabDir * (neckHeight + headHeight),
+                midX + dir * headWidth, y1 + tabDir * (neckHeight + headHeight * 0.5)
+            );
+            this.ctx.bezierCurveTo(
+                midX + dir * headWidth, y1 + tabDir * neckHeight,
+                midX + dir * neckWidth, y1 + tabDir * neckHeight,
+                midX + dir * neckWidth, y1
+            );
+            this.ctx.lineTo(x2, y2);
+        } else {
+            const dir = y2 > y1 ? 1 : -1;
+            const midY = y1 + dir * length / 2;
+
+            this.ctx.lineTo(x1, midY - dir * neckWidth);
+            this.ctx.bezierCurveTo(
+                x1 + tabDir * neckHeight, midY - dir * neckWidth,
+                x1 + tabDir * neckHeight, midY - dir * headWidth,
+                x1 + tabDir * (neckHeight + headHeight * 0.5), midY - dir * headWidth
+            );
+            this.ctx.bezierCurveTo(
+                x1 + tabDir * (neckHeight + headHeight), midY - dir * headWidth,
+                x1 + tabDir * (neckHeight + headHeight), midY + dir * headWidth,
+                x1 + tabDir * (neckHeight + headHeight * 0.5), midY + dir * headWidth
+            );
+            this.ctx.bezierCurveTo(
+                x1 + tabDir * neckHeight, midY + dir * headWidth,
+                x1 + tabDir * neckHeight, midY + dir * neckWidth,
+                x1, midY + dir * neckWidth
+            );
+            this.ctx.lineTo(x2, y2);
+        }
     }
 
     /**

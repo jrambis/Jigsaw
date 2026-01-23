@@ -16,6 +16,21 @@
 
 ---
 
+### Piece selection/deselection UX review
+**Severity:** UX Review
+**Version:** 1.3.4
+**Description:** Current behavior: tap/click on background deselects pieces; hold-drag on piece selects and moves it (touch); alt+drag moves pieces (mouse). Need to review if this is the ideal UX for piece selection/deselection across touch and mouse interactions.
+
+**Considerations:**
+- Should tapping a piece select it without moving?
+- Should there be a way to select multiple pieces without shift+drag?
+- Is the hold delay (300ms) the right timing for touch?
+
+**Files involved:**
+- `js/PuzzleEngine.js` - `handleTouchStart()`, `handlePointerDown()`, `activatePieceDrag()`
+
+---
+
 ## Closed
 
 (none yet)

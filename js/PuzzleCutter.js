@@ -167,29 +167,31 @@ class PuzzleCutter {
         // Create canvas for this piece
         const canvas = document.createElement('canvas');
         const tabSize = Math.min(this.pieceWidth, this.pieceHeight) * 0.2;
+        // Padding must accommodate max tab protrusion: neckHeight(0.2) + headHeight(1.1) = 1.3
+        const tabPadding = tabSize * 1.5;
 
         // Canvas needs to be larger to accommodate tabs
-        canvas.width = this.pieceWidth + tabSize * 2;
-        canvas.height = this.pieceHeight + tabSize * 2;
+        canvas.width = this.pieceWidth + tabPadding * 2;
+        canvas.height = this.pieceHeight + tabPadding * 2;
 
         const ctx = canvas.getContext('2d');
 
         // Draw piece shape and clip image
-        this.drawPieceShape(ctx, tabs, tabSize);
+        this.drawPieceShape(ctx, tabs, tabSize, tabPadding);
 
         // Draw the image portion
         // We need to draw extra image area to cover protruding tabs
         // Calculate source rectangle (clamped to image bounds)
-        const srcX = Math.max(0, x - tabSize);
-        const srcY = Math.max(0, y - tabSize);
-        const srcRight = Math.min(this.image.width, x + this.pieceWidth + tabSize);
-        const srcBottom = Math.min(this.image.height, y + this.pieceHeight + tabSize);
+        const srcX = Math.max(0, x - tabPadding);
+        const srcY = Math.max(0, y - tabPadding);
+        const srcRight = Math.min(this.image.width, x + this.pieceWidth + tabPadding);
+        const srcBottom = Math.min(this.image.height, y + this.pieceHeight + tabPadding);
         const srcWidth = srcRight - srcX;
         const srcHeight = srcBottom - srcY;
 
         // Calculate destination rectangle (adjusted for clamping)
-        const destX = tabSize - (x - srcX);
-        const destY = tabSize - (y - srcY);
+        const destX = tabPadding - (x - srcX);
+        const destY = tabPadding - (y - srcY);
 
         ctx.save();
         ctx.clip();
@@ -219,6 +221,7 @@ class PuzzleCutter {
             height: canvas.height,
             tabs,
             tabSize,
+            tabPadding,
             canvas,
             isPlaced: false,
             isSelected: false,
@@ -232,56 +235,57 @@ class PuzzleCutter {
      * @param {CanvasRenderingContext2D} ctx - Canvas context
      * @param {Object} tabs - Tab configuration for each side
      * @param {number} tabSize - Size of tabs/blanks
+     * @param {number} tabPadding - Padding around piece for tab protrusion
      */
-    drawPieceShape(ctx, tabs, tabSize) {
-        const w = ctx.canvas.width - tabSize * 2;
-        const h = ctx.canvas.height - tabSize * 2;
+    drawPieceShape(ctx, tabs, tabSize, tabPadding) {
+        const w = ctx.canvas.width - tabPadding * 2;
+        const h = ctx.canvas.height - tabPadding * 2;
 
         ctx.beginPath();
-        ctx.moveTo(tabSize, tabSize);
+        ctx.moveTo(tabPadding, tabPadding);
 
         // Top edge
         if (tabs.top.direction !== 0) {
             this.drawTab(ctx,
-                tabSize, tabSize,
-                tabSize + w, tabSize,
+                tabPadding, tabPadding,
+                tabPadding + w, tabPadding,
                 tabs.top.direction, tabSize, 'horizontal', 'top', tabs.top.variation
             );
         } else {
-            ctx.lineTo(tabSize + w, tabSize);
+            ctx.lineTo(tabPadding + w, tabPadding);
         }
 
         // Right edge
         if (tabs.right.direction !== 0) {
             this.drawTab(ctx,
-                tabSize + w, tabSize,
-                tabSize + w, tabSize + h,
+                tabPadding + w, tabPadding,
+                tabPadding + w, tabPadding + h,
                 tabs.right.direction, tabSize, 'vertical', 'right', tabs.right.variation
             );
         } else {
-            ctx.lineTo(tabSize + w, tabSize + h);
+            ctx.lineTo(tabPadding + w, tabPadding + h);
         }
 
         // Bottom edge
         if (tabs.bottom.direction !== 0) {
             this.drawTab(ctx,
-                tabSize + w, tabSize + h,
-                tabSize, tabSize + h,
+                tabPadding + w, tabPadding + h,
+                tabPadding, tabPadding + h,
                 tabs.bottom.direction, tabSize, 'horizontal', 'bottom', tabs.bottom.variation
             );
         } else {
-            ctx.lineTo(tabSize, tabSize + h);
+            ctx.lineTo(tabPadding, tabPadding + h);
         }
 
         // Left edge
         if (tabs.left.direction !== 0) {
             this.drawTab(ctx,
-                tabSize, tabSize + h,
-                tabSize, tabSize,
+                tabPadding, tabPadding + h,
+                tabPadding, tabPadding,
                 tabs.left.direction, tabSize, 'vertical', 'left', tabs.left.variation
             );
         } else {
-            ctx.lineTo(tabSize, tabSize);
+            ctx.lineTo(tabPadding, tabPadding);
         }
 
         ctx.closePath();

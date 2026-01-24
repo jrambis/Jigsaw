@@ -10,15 +10,47 @@ class PuzzleCutter {
         this.cols = 0;
         this.pieceWidth = 0;
         this.pieceHeight = 0;
+        this.rng = null;  // Seeded random number generator
+    }
+
+    /**
+     * Mulberry32 seeded PRNG - produces deterministic random numbers from a seed
+     * @param {number} seed - 32-bit integer seed
+     * @returns {Function} Random number generator function returning 0-1
+     */
+    createRNG(seed) {
+        return function() {
+            seed |= 0;
+            seed = seed + 0x6D2B79F5 | 0;
+            let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+            t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+            return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+    }
+
+    /**
+     * Get a random number using the seeded RNG (or Math.random as fallback)
+     * @returns {number} Random number between 0 and 1
+     */
+    random() {
+        return this.rng ? this.rng() : Math.random();
     }
 
     /**
      * Load an image and cut it into puzzle pieces
      * @param {string} imagePath - Path to the image
      * @param {number} pieceCount - Target number of pieces
+     * @param {number} [seed] - Optional seed for deterministic piece shapes
      * @returns {Promise<Array>} Array of puzzle pieces
      */
-    async cutImage(imagePath, pieceCount) {
+    async cutImage(imagePath, pieceCount, seed = null) {
+        // Initialize seeded RNG if seed provided
+        if (seed !== null) {
+            this.rng = this.createRNG(seed);
+        } else {
+            this.rng = null;  // Fall back to Math.random
+        }
+
         // Load the image
         this.image = await this.loadImage(imagePath);
 
@@ -71,10 +103,10 @@ class PuzzleCutter {
      */
     generateEdgeVariation() {
         return {
-            neckWidth: 0.4 + Math.random() * 0.2,    // 0.4 - 0.6
-            headWidth: 0.7 + Math.random() * 0.3,    // 0.7 - 1.0
-            headHeight: 0.8 + Math.random() * 0.3,   // 0.8 - 1.1
-            neckHeight: 0.1 + Math.random() * 0.1    // 0.1 - 0.2
+            neckWidth: 0.4 + this.random() * 0.2,    // 0.4 - 0.6
+            headWidth: 0.7 + this.random() * 0.3,    // 0.7 - 1.0
+            headHeight: 0.8 + this.random() * 0.3,   // 0.8 - 1.1
+            neckHeight: 0.1 + this.random() * 0.1    // 0.1 - 0.2
         };
     }
 
@@ -95,7 +127,7 @@ class PuzzleCutter {
             horizontalEdges[row] = [];
             for (let col = 0; col < this.cols - 1; col++) {
                 horizontalEdges[row][col] = {
-                    direction: Math.random() > 0.5 ? 1 : -1,
+                    direction: this.random() > 0.5 ? 1 : -1,
                     variation: this.generateEdgeVariation()
                 };
             }
@@ -106,7 +138,7 @@ class PuzzleCutter {
             verticalEdges[row] = [];
             for (let col = 0; col < this.cols; col++) {
                 verticalEdges[row][col] = {
-                    direction: Math.random() > 0.5 ? 1 : -1,
+                    direction: this.random() > 0.5 ? 1 : -1,
                     variation: this.generateEdgeVariation()
                 };
             }
@@ -157,8 +189,8 @@ class PuzzleCutter {
 
                 // Add random offset within cell (keep 20% margin)
                 const margin = 0.2;
-                const x = col * cellWidth + cellWidth * margin + Math.random() * cellWidth * (1 - 2 * margin);
-                const y = row * cellHeight + cellHeight * margin + Math.random() * cellHeight * (1 - 2 * margin);
+                const x = col * cellWidth + cellWidth * margin + this.random() * cellWidth * (1 - 2 * margin);
+                const y = row * cellHeight + cellHeight * margin + this.random() * cellHeight * (1 - 2 * margin);
 
                 positions.push({ x, y, originalRow: row, originalCol: col });
             }
@@ -169,7 +201,7 @@ class PuzzleCutter {
             // Pick a random index that's not the same as i (to avoid piece staying in place)
             let j;
             do {
-                j = Math.floor(Math.random() * (i + 1));
+                j = Math.floor(this.random() * (i + 1));
             } while (j === i && positions.length > 2);
 
             [positions[i], positions[j]] = [positions[j], positions[i]];

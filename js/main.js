@@ -12,6 +12,7 @@ let puzzleAPI;
 
 // Current puzzle state
 let currentImagePath = null;
+let currentShapeSeed = null;  // Seed for deterministic piece shapes
 let puzzleLoaded = false;
 let saveTimeout = null;
 let selectionTimeout = null;
@@ -272,8 +273,11 @@ async function startNewPuzzle() {
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     try {
-        // Cut the image into pieces
-        const pieces = await puzzleCutter.cutImage(currentImagePath, pieceCount);
+        // Generate a random seed for piece shapes
+        currentShapeSeed = Math.floor(Math.random() * 2147483647);
+
+        // Cut the image into pieces with the seed
+        const pieces = await puzzleCutter.cutImage(currentImagePath, pieceCount, currentShapeSeed);
 
         // Set pieces in engine
         puzzleEngine.setPieces(pieces);
@@ -306,11 +310,14 @@ async function restoreSharedPuzzle(puzzleData) {
         // Set UI values
         pieceCountSelect.value = puzzleData.pieceCount;
 
+        // Get the shape seed from saved state
+        currentShapeSeed = puzzleData.shapeSeed || null;
+
         // Yield to ensure spinner is visible before heavy work
         await new Promise(r => setTimeout(r, 50));
 
-        // Create fresh puzzle pieces (this is the slow part)
-        const pieces = await puzzleCutter.cutImage(puzzleData.image, puzzleData.pieceCount);
+        // Create fresh puzzle pieces with the same seed (this is the slow part)
+        const pieces = await puzzleCutter.cutImage(puzzleData.image, puzzleData.pieceCount, currentShapeSeed);
 
         // Restore piece positions and state
         pieces.forEach(piece => {
@@ -466,6 +473,7 @@ function getPuzzleState() {
         pieceCount: puzzleEngine.pieces.length,
         progress: puzzleEngine.getProgress(),
         image: currentImagePath,
+        shapeSeed: currentShapeSeed,
         pieces: pieces,
         groups: groups,
         camera: {

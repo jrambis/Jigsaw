@@ -39,9 +39,7 @@ class PuzzleEngine {
             pinchStartScreenY: 0,
             // Piece being held for drag
             heldPiece: null,
-            touchCount: 0,
-            // Ignore pan after pinch until all fingers lifted
-            ignorePanUntilRelease: false
+            touchCount: 0
         };
 
         // Hammer.js manager
@@ -243,11 +241,6 @@ class PuzzleEngine {
      * Handle Hammer pan start
      */
     onHammerPanStart(e) {
-        // Ignore pan if we just finished pinching (prevents drift from staggered finger lift)
-        if (this.input.ignorePanUntilRelease) {
-            return;
-        }
-
         const rect = this.canvas.getBoundingClientRect();
         const screenX = e.center.x - rect.left;
         const screenY = e.center.y - rect.top;
@@ -314,7 +307,7 @@ class PuzzleEngine {
             // Selection box just updates currentX/currentY (already done above)
             // The selection box is drawn in render loop using startX/Y and currentX/Y
 
-        } else if (this.input.isPanning && !this.input.isPinching && !this.input.ignorePanUntilRelease) {
+        } else if (this.input.isPanning && !this.input.isPinching) {
             // Pan camera using screen coordinates
             const dx = screenX - this.input.panStartScreenX;
             const dy = screenY - this.input.panStartScreenY;
@@ -341,8 +334,6 @@ class PuzzleEngine {
         this.input.isPanning = false;
         this.input.heldPiece = null;
         this.input.touchCount = 0;
-        // Clear the ignore flag when all fingers are lifted
-        this.input.ignorePanUntilRelease = false;
     }
 
     /**
@@ -400,8 +391,14 @@ class PuzzleEngine {
     onHammerPinchEnd(e) {
         this.input.isPinching = false;
         this.input.touchCount = e.pointers ? e.pointers.length : 0;
-        // Ignore pan until all fingers lifted (prevents drift when fingers lift at different times)
-        this.input.ignorePanUntilRelease = true;
+
+        // Reset pan start coordinates to current position
+        // This prevents jump when transitioning from pinch to pan with remaining finger
+        if (e.center) {
+            const rect = this.canvas.getBoundingClientRect();
+            this.input.panStartScreenX = e.center.x - rect.left;
+            this.input.panStartScreenY = e.center.y - rect.top;
+        }
     }
 
     /**

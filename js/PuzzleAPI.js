@@ -1,11 +1,13 @@
 /**
  * PuzzleAPI - Client for communicating with PHP backend
- * Handles save/load/list/delete operations for puzzle states
- * @version 1.0.0
+ * Handles shared puzzle state, backups, user prefs, and SSE subscription
+ * @version 2.0.0 - Multiuser support
  */
 class PuzzleAPI {
     constructor(baseUrl = './api.php') {
         this.baseUrl = baseUrl;
+        this.eventSource = null;
+        this.onPuzzleUpdate = null;  // Callback for SSE updates
     }
 
     /**
@@ -29,7 +31,8 @@ class PuzzleAPI {
             method,
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            credentials: 'include'  // Include session cookies
         };
 
         if (data && (method === 'POST' || method === 'PUT')) {
@@ -51,34 +54,190 @@ class PuzzleAPI {
         }
     }
 
+    // ==================== Shared Puzzle Methods ====================
+
     /**
-     * Save puzzle state
-     * @param {string} puzzleId - Unique puzzle identifier
-     * @param {string} name - Puzzle name
+     * Save shared puzzle state
+     * @param {string} imagePath - Image path (e.g., "images/DisneyHoliday.jpg")
      * @param {Object} state - Puzzle state object
      * @returns {Promise<Object>}
      */
-    async savePuzzle(puzzleId, name, state) {
-        return await this.request('save', 'POST', {
-            puzzleId,
-            name,
-            state,
-            createdAt: state.createdAt || Date.now()
+    async saveSharedPuzzle(imagePath, state) {
+        return await this.request('saveShared', 'POST', {
+            image: imagePath,
+            state: state
         });
     }
 
     /**
-     * Load puzzle state
-     * @param {string} puzzleId - Puzzle identifier
+     * Load shared puzzle state
+     * @param {string} imagePath - Image path
      * @returns {Promise<Object>}
+     */
+    async loadSharedPuzzle(imagePath) {
+        return await this.request('loadShared', 'GET', null, { image: imagePath });
+    }
+
+    /**
+     * Reset puzzle (scatter pieces)
+     * @param {string} imagePath - Image path
+     * @returns {Promise<Object>}
+     */
+    async resetPuzzle(imagePath) {
+        return await this.request('resetPuzzle', 'POST', null, { image: imagePath });
+    }
+
+    // ==================== Backup Methods ====================
+
+    /**
+     * List available backups for a puzzle
+     * @param {string} imagePath - Image path
+     * @returns {Promise<Array>}
+     */
+    async listBackups(imagePath) {
+        const result = await this.request('listBackups', 'GET', null, { image: imagePath });
+        return result.data?.backups || [];
+    }
+
+    /**
+     * Restore puzzle from backup
+     * @param {string} imagePath - Image path
+     * @param {string} backupFilename - Backup file to restore
+     * @returns {Promise<Object>}
+     */
+    async restoreBackup(imagePath, backupFilename) {
+        return await this.request('restoreBackup', 'POST', null, {
+            image: imagePath,
+            backup: backupFilename
+        });
+    }
+
+    // ==================== User Preferences ====================
+
+    /**
+     * Save user preferences
+     * @param {string} displayName - User's display name
+     * @param {string} color - User's color (hex)
+     * @returns {Promise<Object>}
+     */
+    async saveUserPrefs(displayName, color) {
+        return await this.request('saveUserPrefs', 'POST', {
+            displayName,
+            color
+        });
+    }
+
+    /**
+     * Get user preferences
+     * @returns {Promise<Object>}
+     */
+    async getUserPrefs() {
+        const result = await this.request('getUserPrefs', 'GET');
+        return result.data;
+    }
+
+    // ==================== Selection Broadcasting ====================
+
+    /**
+     * Update user's piece selection (broadcast to other users)
+     * @param {string} imagePath - Image path
+     * @param {Array<number>} pieceIds - Selected piece IDs
+     * @param {string} color - User's color
+     * @param {string} displayName - User's display name
+     * @returns {Promise<Object>}
+     */
+    async updateSelection(imagePath, pieceIds, color, displayName) {
+        return await this.request('updateSelection', 'POST', {
+            image: imagePath,
+            pieceIds,
+            color,
+            displayName
+        });
+    }
+
+    // ==================== SSE Subscription ====================
+
+    /**
+     * Subscribe to real-time puzzle updates via SSE
+     * @param {string} imagePath - Image path to subscribe to
+     * @param {Function} onUpdate - Callback for puzzle updates
+     * @param {Function} onConnect - Callback when connected
+     * @param {Function} onError - Callback for errors
+     */
+    subscribe(imagePath, onUpdate, onConnect = null, onError = null) {
+        // Close existing connection if any
+        this.unsubscribe();
+
+        const url = new URL(this.baseUrl, window.location.origin);
+        url.searchParams.set('action', 'subscribe');
+        url.searchParams.set('image', imagePath);
+
+        this.eventSource = new EventSource(url.toString(), { withCredentials: true });
+        this.onPuzzleUpdate = onUpdate;
+
+        this.eventSource.addEventListener('connected', (event) => {
+            const data = JSON.parse(event.data);
+            console.log('SSE connected:', data);
+            if (onConnect) onConnect(data);
+        });
+
+        this.eventSource.addEventListener('puzzleUpdate', (event) => {
+            const data = JSON.parse(event.data);
+            if (this.onPuzzleUpdate) {
+                this.onPuzzleUpdate(data);
+            }
+        });
+
+        this.eventSource.addEventListener('timeout', (event) => {
+            console.log('SSE timeout, reconnecting...');
+            // Auto-reconnect after timeout
+            setTimeout(() => {
+                this.subscribe(imagePath, onUpdate, onConnect, onError);
+            }, 1000);
+        });
+
+        this.eventSource.onerror = (error) => {
+            console.error('SSE error:', error);
+            if (onError) onError(error);
+
+            // Auto-reconnect on error
+            if (this.eventSource.readyState === EventSource.CLOSED) {
+                setTimeout(() => {
+                    this.subscribe(imagePath, onUpdate, onConnect, onError);
+                }, 3000);
+            }
+        };
+    }
+
+    /**
+     * Unsubscribe from SSE updates
+     */
+    unsubscribe() {
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+        this.onPuzzleUpdate = null;
+    }
+
+    // ==================== Legacy Methods (kept for compatibility) ====================
+
+    /**
+     * Save puzzle state (legacy - uses saveShared)
+     */
+    async savePuzzle(puzzleId, name, state) {
+        return await this.saveSharedPuzzle(state.image, state);
+    }
+
+    /**
+     * Load puzzle state (legacy)
      */
     async loadPuzzle(puzzleId) {
         return await this.request('load', 'GET', null, { id: puzzleId });
     }
 
     /**
-     * List all saved puzzles
-     * @returns {Promise<Array>}
+     * List all saved puzzles (legacy)
      */
     async listPuzzles() {
         const result = await this.request('list', 'GET');
@@ -86,9 +245,7 @@ class PuzzleAPI {
     }
 
     /**
-     * Delete puzzle
-     * @param {string} puzzleId - Puzzle identifier
-     * @returns {Promise<Object>}
+     * Delete puzzle (legacy)
      */
     async deletePuzzle(puzzleId) {
         return await this.request('delete', 'POST', null, { id: puzzleId });

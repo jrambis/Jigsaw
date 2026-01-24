@@ -1,16 +1,14 @@
 <!DOCTYPE html>
 <!--
-    Multiplayer Jigsaw Puzzle - v1.4.6
-    Phase 1: Core Engine ✓
-    Phase 2: Touch Controls ✓
-    Phase 3: PHP Persistence ✓
+    Multiplayer Jigsaw Puzzle - v2.0.0
+    Multiuser Mode: Shared puzzles, real-time sync
     Deployed via GitHub Actions
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="version" content="1.4.6">
+    <meta name="version" content="2.0.0">
     <title>Multiplayer Jigsaw Puzzle</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -37,14 +35,13 @@
                 </select>
             </div>
             <button id="startBtn">Start New Puzzle</button>
-            <button id="saveBtn" disabled>Save</button>
-            <button id="loadBtn">Load</button>
             <button id="resetViewBtn">Reset View</button>
             <button id="lassoBtn">Lasso</button>
+            <button id="settingsBtn">Settings</button>
             <div id="stats">
                 <span id="progressText">0% Complete</span>
                 <span id="touchInfo"></span>
-                <span id="version" style="color: #999; font-size: 12px;">v1.4.6</span>
+                <span id="version" style="color: #999; font-size: 12px;">v2.0.0</span>
             </div>
         </div>
 
@@ -56,6 +53,54 @@
             <h3>Controls:</h3>
             <p><strong>Touch:</strong> Tap = Pan | Hold & Drag = Move Piece | Edge = Auto-pan | Pinch = Zoom</p>
             <p><strong>Mouse:</strong> Click & Drag = Pan | Alt+Drag = Move Piece | Shift+Drag = Selection Box</p>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="closeSettingsBtn" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- User Settings -->
+                <section class="settings-section">
+                    <h3>Your Profile</h3>
+                    <div class="form-group">
+                        <label for="userNameInput">Display Name:</label>
+                        <input type="text" id="userNameInput" maxlength="20" placeholder="Player" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="userColorInput">Your Color:</label>
+                        <input type="color" id="userColorInput" value="#667eea">
+                    </div>
+                    <button id="saveSettingsBtn" class="btn-primary">Save Settings</button>
+                </section>
+
+                <!-- Puzzle Management -->
+                <section class="settings-section">
+                    <h3>Puzzle Management</h3>
+                    <button id="showBackupsBtn" class="btn-secondary">View Backups</button>
+                    <button id="resetPuzzleBtn" class="btn-danger">Reset Puzzle</button>
+                    <p class="settings-note">Backups are created automatically every 3 minutes when active.</p>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Browser Modal -->
+    <div id="backupModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Puzzle Backups</h2>
+                <button id="closeBackupModalBtn" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="backupList">
+                    <p>Loading backups...</p>
+                </div>
+            </div>
         </div>
     </div>
 

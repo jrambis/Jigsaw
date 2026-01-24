@@ -55,7 +55,7 @@ class PuzzleEngine {
 
         // Touch-specific settings
         this.touchSettings = {
-            holdDelay: 300, // ms to wait before activating piece drag
+            holdDelay: 100, // ms to wait before activating piece drag
             edgePanThreshold: 60, // pixels from edge to trigger panning
             edgePanSpeed: 5,
             snapDistance: 40 // Distance for auto-snapping pieces
@@ -77,6 +77,13 @@ class PuzzleEngine {
             placedPieces: 0,
             totalPieces: 0
         };
+
+        // Callbacks for multiuser sync
+        this.onPieceMoveEnd = null;      // Called after piece drag ends
+        this.onSelectionChange = null;   // Called when selection changes
+
+        // Remote user selections (from other users)
+        this.remoteSelections = {};  // userId -> { pieceIds: [], color: '#...', displayName: '...' }
 
         // Piece groups - connected pieces move together
         // Map of groupId -> Set of piece IDs
@@ -206,7 +213,9 @@ class PuzzleEngine {
         this.hammer.add([pinch, pan, press, tap]);
 
         // Configure relationships
+        tap.requireFailure(press);  // Tap only fires if press fails (quick tap, not hold)
         pan.requireFailure(press);  // Pan waits for press to fail (movement cancels hold)
+        pan.requireFailure(tap);    // Pan waits for tap to fail (allows quick taps)
         pinch.recognizeWith(pan);   // Allow pan while pinching
     }
 
@@ -247,6 +256,9 @@ class PuzzleEngine {
             this.activatePieceDrag(piece, worldPos.x, worldPos.y);
             this.input.startX = worldPos.x;
             this.input.startY = worldPos.y;
+        } else {
+            // Pressed on empty space - clear selection
+            this.clearSelection();
         }
     }
 
@@ -255,6 +267,9 @@ class PuzzleEngine {
      */
     onHammerPressUp(e) {
         this.input.heldPiece = null;
+        // If we held to select but didn't actually pan/drag, clear isDragging
+        // so future pans don't move the selected pieces
+        this.input.isDragging = false;
     }
 
     /**
@@ -382,6 +397,11 @@ class PuzzleEngine {
             this.checkSnapping();
             this.input.isDragging = false;
             this.edgePanning.active = false;
+
+            // Trigger callback for auto-save
+            if (this.onPieceMoveEnd) {
+                this.onPieceMoveEnd(this.selectedPieces);
+            }
         } else if (this.input.isSelecting) {
             this.selectPiecesInBox();
             this.input.isSelecting = false;
@@ -563,6 +583,11 @@ class PuzzleEngine {
 
         // Bring selected pieces to front
         this.bringSelectedToFront();
+
+        // Notify selection change for remote user visibility
+        if (this.onSelectionChange) {
+            this.onSelectionChange(this.selectedPieces);
+        }
     }
 
     /**
@@ -686,8 +711,14 @@ class PuzzleEngine {
      * Clear piece selection
      */
     clearSelection() {
+        const hadSelection = this.selectedPieces.length > 0;
         this.selectedPieces.forEach(piece => piece.isSelected = false);
         this.selectedPieces = [];
+
+        // Notify selection change (clearing)
+        if (hadSelection && this.onSelectionChange) {
+            this.onSelectionChange([]);
+        }
     }
 
     /**
@@ -961,6 +992,9 @@ class PuzzleEngine {
             this.drawPiece(piece);
         });
 
+        // Draw remote user selections
+        this.drawRemoteSelections();
+
         // Draw selection box
         if (this.input.isSelecting) {
             this.drawSelectionBox();
@@ -1004,6 +1038,69 @@ class PuzzleEngine {
         // Locked pieces don't need any special outline - they're in final position
 
         this.ctx.restore();
+    }
+
+    /**
+     * Draw remote user selections with their colors
+     */
+    drawRemoteSelections() {
+        for (const [userId, selection] of Object.entries(this.remoteSelections)) {
+            if (!selection.pieceIds || selection.pieceIds.length === 0) continue;
+
+            const color = selection.color || '#ff6b6b';
+            const displayName = selection.displayName || 'Player';
+
+            // Find the pieces and draw highlights
+            let minX = Infinity, minY = Infinity;
+
+            selection.pieceIds.forEach(pieceId => {
+                const piece = this.pieces.find(p => p.id === pieceId);
+                if (piece && !piece.isSelected) {  // Don't highlight if locally selected
+                    // Draw dashed outline
+                    this.ctx.save();
+                    this.ctx.strokeStyle = color;
+                    this.ctx.lineWidth = 3 / this.camera.scale;
+                    this.ctx.setLineDash([8 / this.camera.scale, 4 / this.camera.scale]);
+                    this.drawPieceOutline(piece);
+                    this.ctx.setLineDash([]);
+                    this.ctx.restore();
+
+                    // Track bounds for label
+                    minX = Math.min(minX, piece.currentX);
+                    minY = Math.min(minY, piece.currentY);
+                }
+            });
+
+            // Draw username label above pieces
+            if (minX !== Infinity) {
+                this.ctx.save();
+                const fontSize = 14 / this.camera.scale;
+                this.ctx.font = `bold ${fontSize}px sans-serif`;
+
+                // Background
+                const textWidth = this.ctx.measureText(displayName).width;
+                const padding = 4 / this.camera.scale;
+                const labelX = minX;
+                const labelY = minY - fontSize - padding * 2;
+
+                this.ctx.fillStyle = color;
+                this.ctx.fillRect(labelX - padding, labelY - padding, textWidth + padding * 2, fontSize + padding * 2);
+
+                // Text
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillText(displayName, labelX, labelY + fontSize - padding / 2);
+
+                this.ctx.restore();
+            }
+        }
+    }
+
+    /**
+     * Set remote user selections (from SSE updates)
+     * @param {Object} selections - Map of userId -> selection data
+     */
+    setRemoteSelections(selections) {
+        this.remoteSelections = selections || {};
     }
 
     /**

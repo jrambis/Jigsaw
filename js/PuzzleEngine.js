@@ -1096,6 +1096,27 @@ class PuzzleEngine {
             this.ctx.font = '14px sans-serif';
             this.ctx.fillText(`Touches: ${this.input.touchCount}`, 20, 30);
         }
+
+        // Show debug log on canvas (works on Safari)
+        if (this.debugEnabled && this.debugMessages.length > 0) {
+            const lineHeight = 14;
+            const padding = 8;
+            const maxLines = 15;
+            const msgs = this.debugMessages.slice(-maxLines);
+            const boxHeight = msgs.length * lineHeight + padding * 2;
+            const boxY = this.canvas.height - boxHeight - 10;
+
+            // Background
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            this.ctx.fillRect(10, boxY, this.canvas.width - 20, boxHeight);
+
+            // Text
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.font = '11px monospace';
+            msgs.forEach((msg, i) => {
+                this.ctx.fillText(msg, padding + 10, boxY + padding + (i + 1) * lineHeight - 2);
+            });
+        }
     }
 
     /**

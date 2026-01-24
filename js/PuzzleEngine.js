@@ -456,13 +456,17 @@ class PuzzleEngine {
     setupDebugToggle() {
         const btn = document.getElementById('toggleDebug');
         if (btn) {
-            btn.addEventListener('click', () => {
+            const toggle = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 this.debugEnabled = !this.debugEnabled;
                 if (this.debugLog) {
                     this.debugLog.style.display = this.debugEnabled ? 'block' : 'none';
                 }
                 btn.textContent = this.debugEnabled ? 'Hide Debug' : 'Show Debug';
-            });
+            };
+            btn.addEventListener('click', toggle);
+            btn.addEventListener('touchend', toggle);
         }
     }
 

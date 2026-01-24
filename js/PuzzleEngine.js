@@ -39,7 +39,11 @@ class PuzzleEngine {
             pinchStartScreenY: 0,
             // Piece being held for drag
             heldPiece: null,
-            touchCount: 0
+            touchCount: 0,
+            // Lasso selection state
+            isLassoMode: false,      // Toggle: lasso tool active
+            isDrawingLasso: false,   // Currently drawing lasso path
+            lassoPath: []            // Array of {x, y} world coordinates
         };
 
         // Hammer.js manager
@@ -148,6 +152,18 @@ class PuzzleEngine {
 
         // Setup Hammer.js for gesture recognition
         this.setupHammer();
+
+        // Setup lasso button
+        const lassoBtn = document.getElementById('lassoBtn');
+        if (lassoBtn) {
+            lassoBtn.addEventListener('click', () => {
+                this.input.isLassoMode = !this.input.isLassoMode;
+                lassoBtn.classList.toggle('active', this.input.isLassoMode);
+                if (!this.input.isLassoMode) {
+                    this.input.lassoPath = [];
+                }
+            });
+        }
     }
 
     /**
@@ -266,6 +282,13 @@ class PuzzleEngine {
             return;
         }
 
+        // Lasso mode: start collecting path
+        if (this.input.isLassoMode) {
+            this.input.isDrawingLasso = true;
+            this.input.lassoPath = [{ x: worldPos.x, y: worldPos.y }];
+            return;
+        }
+
         // Check for mouse modifier keys (srcEvent gives access to original event)
         const srcEvent = e.srcEvent;
         if (srcEvent && srcEvent.shiftKey) {
@@ -299,6 +322,12 @@ class PuzzleEngine {
         this.input.currentX = worldPos.x;
         this.input.currentY = worldPos.y;
         this.input.touchCount = e.pointers.length;
+
+        // Drawing lasso: add points to path
+        if (this.input.isDrawingLasso) {
+            this.input.lassoPath.push({ x: worldPos.x, y: worldPos.y });
+            return;
+        }
 
         if (this.input.isDragging) {
             // Move selected pieces in world coordinates
@@ -336,6 +365,18 @@ class PuzzleEngine {
         const screenY = e.center ? e.center.y - rect.top : 0;
 
         this.log(`PAN END ptrs=${e.pointers?.length} screen=(${screenX.toFixed(0)},${screenY.toFixed(0)}) wasPanning=${this.input.isPanning}`);
+
+        // Finish lasso selection
+        if (this.input.isDrawingLasso) {
+            this.selectPiecesInLasso();
+            this.input.isDrawingLasso = false;
+            this.input.lassoPath = [];
+
+            // Auto turn off lasso mode after use
+            this.input.isLassoMode = false;
+            const lassoBtn = document.getElementById('lassoBtn');
+            if (lassoBtn) lassoBtn.classList.remove('active');
+        }
 
         if (this.input.isDragging) {
             this.checkSnapping();
@@ -497,7 +538,13 @@ class PuzzleEngine {
         this.input.isDragging = true;
         this.input.isPanning = false;
 
-        // Select all pieces in the same group
+        // If piece is already selected, drag the entire current selection
+        if (piece.isSelected) {
+            this.bringSelectedToFront();
+            return;
+        }
+
+        // Otherwise, select all pieces in the same group
         this.clearSelection();
         const groupPieceIds = this.groups.get(piece.groupId);
         if (groupPieceIds) {
@@ -641,6 +688,48 @@ class PuzzleEngine {
     clearSelection() {
         this.selectedPieces.forEach(piece => piece.isSelected = false);
         this.selectedPieces = [];
+    }
+
+    /**
+     * Select pieces whose center falls within the lasso path
+     */
+    selectPiecesInLasso() {
+        if (this.input.lassoPath.length < 3) return;
+
+        this.clearSelection();
+
+        this.pieces.forEach(piece => {
+            if (piece.isLocked) return;
+
+            const centerX = piece.currentX + piece.width / 2;
+            const centerY = piece.currentY + piece.height / 2;
+
+            if (this.pointInPolygon(centerX, centerY, this.input.lassoPath)) {
+                piece.isSelected = true;
+                this.selectedPieces.push(piece);
+            }
+        });
+    }
+
+    /**
+     * Ray-casting algorithm to test if point is inside polygon
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @param {Array} polygon - Array of {x, y} points
+     * @returns {boolean} True if point is inside polygon
+     */
+    pointInPolygon(x, y, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+
+            if (((yi > y) !== (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+                inside = !inside;
+            }
+        }
+        return inside;
     }
 
     /**
@@ -877,6 +966,11 @@ class PuzzleEngine {
             this.drawSelectionBox();
         }
 
+        // Draw lasso path
+        if (this.input.isDrawingLasso) {
+            this.drawLassoPath();
+        }
+
         // Restore context
         this.ctx.restore();
 
@@ -1082,6 +1176,30 @@ class PuzzleEngine {
         this.ctx.fillRect(x, y, w, h);
         this.ctx.strokeRect(x, y, w, h);
         this.ctx.setLineDash([]);
+    }
+
+    /**
+     * Draw lasso selection path
+     */
+    drawLassoPath() {
+        if (this.input.lassoPath.length < 2) return;
+
+        this.ctx.strokeStyle = '#667eea';
+        this.ctx.lineWidth = 2 / this.camera.scale;
+        this.ctx.fillStyle = 'rgba(102, 126, 234, 0.1)';
+        this.ctx.setLineDash([]);
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.input.lassoPath[0].x, this.input.lassoPath[0].y);
+
+        for (const point of this.input.lassoPath) {
+            this.ctx.lineTo(point.x, point.y);
+        }
+
+        // Close path back to start
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
     }
 
     /**

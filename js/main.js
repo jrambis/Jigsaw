@@ -134,6 +134,10 @@ function updateStats() {
         touchInfo.textContent = 'Panning';
     } else if (puzzleEngine.input.isSelecting) {
         touchInfo.textContent = 'Selecting';
+    } else if (puzzleEngine.input.isDrawingLasso) {
+        touchInfo.textContent = 'Lasso selecting';
+    } else if (puzzleEngine.input.isLassoMode) {
+        touchInfo.textContent = 'Lasso mode';
     } else if (puzzleEngine.edgePanning.active) {
         touchInfo.textContent = 'Edge panning';
     } else {

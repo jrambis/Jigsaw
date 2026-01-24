@@ -51,7 +51,10 @@ class PuzzleEngine {
 
         // Debug logging - stores messages for main.js to display
         this.debugMessages = [];
-        this.debugEnabled = true; // Always on for now
+        this.debugEnabled = false;
+
+        // Canvas background color
+        this.backgroundColor = '#f0f0f0';
 
         // Touch-specific settings
         this.touchSettings = {
@@ -84,6 +87,17 @@ class PuzzleEngine {
 
         // Remote user selections (from other users)
         this.remoteSelections = {};  // userId -> { pieceIds: [], color: '#...', displayName: '...' }
+
+        // Reference image (completed puzzle preview)
+        this.referenceImage = {
+            visible: false,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            isSelected: false
+        };
+        this.sourceImage = null;  // Holds the loaded Image object
 
         // Piece groups - connected pieces move together
         // Map of groupId -> Set of piece IDs
@@ -250,16 +264,29 @@ class PuzzleEngine {
         const screenY = e.center.y - rect.top;
         const worldPos = this.screenToWorld(screenX, screenY);
 
+        // Check pieces first (they're above reference image)
         const piece = this.getPieceAt(worldPos.x, worldPos.y);
         if (piece) {
             this.input.heldPiece = piece;
+            this.deselectReferenceImage();
             this.activatePieceDrag(piece, worldPos.x, worldPos.y);
             this.input.startX = worldPos.x;
             this.input.startY = worldPos.y;
-        } else {
-            // Pressed on empty space - clear selection
-            this.clearSelection();
+            return;
         }
+
+        // Check reference image (behind pieces)
+        if (this.isPointInReferenceImage(worldPos.x, worldPos.y)) {
+            this.clearSelection();
+            this.selectReferenceImage();
+            this.input.isDragging = true;
+            this.input.startX = worldPos.x;
+            this.input.startY = worldPos.y;
+            return;
+        }
+
+        // Pressed on empty space - clear selection
+        this.clearSelection();
     }
 
     /**
@@ -394,13 +421,16 @@ class PuzzleEngine {
         }
 
         if (this.input.isDragging) {
-            this.checkSnapping();
+            // Only check snapping for pieces, not reference image
+            if (this.selectedPieces.length > 0) {
+                this.checkSnapping();
+            }
             this.input.isDragging = false;
             this.edgePanning.active = false;
 
             // Trigger callback for auto-save
             if (this.onPieceMoveEnd) {
-                this.onPieceMoveEnd(this.selectedPieces);
+                this.onPieceMoveEnd(this.selectedPieces, this.referenceImage.isSelected);
             }
         } else if (this.input.isSelecting) {
             this.selectPiecesInBox();
@@ -586,7 +616,7 @@ class PuzzleEngine {
 
         // Notify selection change for remote user visibility
         if (this.onSelectionChange) {
-            this.onSelectionChange(this.selectedPieces);
+            this.onSelectionChange(this.selectedPieces, false);
         }
     }
 
@@ -643,6 +673,11 @@ class PuzzleEngine {
             piece.currentX += dx;
             piece.currentY += dy;
         });
+
+        // Also move reference image if selected
+        if (this.referenceImage.isSelected) {
+            this.moveReferenceImage(dx, dy);
+        }
     }
 
     /**
@@ -711,13 +746,14 @@ class PuzzleEngine {
      * Clear piece selection
      */
     clearSelection() {
-        const hadSelection = this.selectedPieces.length > 0;
+        const hadSelection = this.selectedPieces.length > 0 || this.referenceImage.isSelected;
         this.selectedPieces.forEach(piece => piece.isSelected = false);
         this.selectedPieces = [];
+        this.referenceImage.isSelected = false;
 
         // Notify selection change (clearing)
         if (hadSelection && this.onSelectionChange) {
-            this.onSelectionChange([]);
+            this.onSelectionChange([], false);
         }
     }
 
@@ -966,7 +1002,7 @@ class PuzzleEngine {
         this.applyEdgePanning();
 
         // Clear canvas
-        this.ctx.fillStyle = '#f0f0f0';
+        this.ctx.fillStyle = this.backgroundColor;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Save context
@@ -978,6 +1014,9 @@ class PuzzleEngine {
 
         // Draw puzzle border first (behind pieces)
         this.drawPuzzleBorder();
+
+        // Draw reference image (behind pieces)
+        this.drawReferenceImage();
 
         // Sort pieces by z-index, with locked pieces drawn first (at bottom)
         const sortedPieces = [...this.pieces].sort((a, b) => {
@@ -1045,10 +1084,16 @@ class PuzzleEngine {
      */
     drawRemoteSelections() {
         for (const [userId, selection] of Object.entries(this.remoteSelections)) {
-            if (!selection.pieceIds || selection.pieceIds.length === 0) continue;
-
             const color = selection.color || '#ff6b6b';
             const displayName = selection.displayName || 'Player';
+
+            // Check if remote user has reference image selected
+            if (selection.referenceSelected && !this.referenceImage.isSelected) {
+                this.drawRemoteReferenceSelection(color, displayName);
+            }
+
+            // Check for piece selections
+            if (!selection.pieceIds || selection.pieceIds.length === 0) continue;
 
             // Find the pieces and draw highlights
             let minX = Infinity, minY = Infinity;
@@ -1303,16 +1348,7 @@ class PuzzleEngine {
      * Draw UI overlay (screen space)
      */
     drawUIOverlay() {
-        // Show touch info
-        if (this.input.touchCount > 0) {
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(10, 10, 200, 30);
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px sans-serif';
-            this.ctx.fillText(`Touches: ${this.input.touchCount}`, 20, 30);
-        }
-
-        // Show debug log on canvas (works on Safari)
+        // Debug log on canvas (disabled by default)
         if (this.debugEnabled && this.debugMessages.length > 0) {
             const lineHeight = 14;
             const padding = 8;
@@ -1354,5 +1390,159 @@ class PuzzleEngine {
             this.camera.y = -bounds.centerY + this.canvas.height / 2;
             this.camera.scale = 1;
         }
+    }
+
+    /**
+     * Set canvas background color
+     * @param {string} color - CSS color value
+     */
+    setBackgroundColor(color) {
+        this.backgroundColor = color;
+    }
+
+    /**
+     * Set the source image for reference image display
+     * @param {HTMLImageElement} img - The loaded image
+     */
+    setSourceImage(img) {
+        this.sourceImage = img;
+        if (img) {
+            this.referenceImage.width = img.width;
+            this.referenceImage.height = img.height;
+        }
+    }
+
+    /**
+     * Draw the reference image (completed puzzle preview)
+     */
+    drawReferenceImage() {
+        if (!this.referenceImage.visible || !this.sourceImage) return;
+
+        const ref = this.referenceImage;
+
+        this.ctx.save();
+
+        // Draw image at 50% opacity
+        this.ctx.globalAlpha = 0.5;
+        this.ctx.drawImage(this.sourceImage, ref.x, ref.y, ref.width, ref.height);
+        this.ctx.globalAlpha = 1.0;
+
+        // Draw selection highlight if selected
+        if (ref.isSelected) {
+            // Local selection - solid rectangle in user's color
+            this.ctx.strokeStyle = '#667eea';
+            this.ctx.lineWidth = 3 / this.camera.scale;
+            this.ctx.strokeRect(ref.x, ref.y, ref.width, ref.height);
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw remote reference image selection (when another user has it selected)
+     * @param {string} color - User's color
+     * @param {string} displayName - User's display name
+     */
+    drawRemoteReferenceSelection(color, displayName) {
+        if (!this.referenceImage.visible || !this.sourceImage) return;
+
+        const ref = this.referenceImage;
+
+        this.ctx.save();
+
+        // Dashed outline in remote user's color
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 3 / this.camera.scale;
+        this.ctx.setLineDash([8 / this.camera.scale, 4 / this.camera.scale]);
+        this.ctx.strokeRect(ref.x, ref.y, ref.width, ref.height);
+        this.ctx.setLineDash([]);
+
+        // Draw username label
+        const fontSize = 14 / this.camera.scale;
+        this.ctx.font = `bold ${fontSize}px sans-serif`;
+
+        const textWidth = this.ctx.measureText(displayName).width;
+        const padding = 4 / this.camera.scale;
+        const labelX = ref.x;
+        const labelY = ref.y - fontSize - padding * 2;
+
+        // Background
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(labelX - padding, labelY - padding, textWidth + padding * 2, fontSize + padding * 2);
+
+        // Text
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillText(displayName, labelX, labelY + fontSize - padding / 2);
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Check if a point is inside the reference image
+     * @param {number} x - World X coordinate
+     * @param {number} y - World Y coordinate
+     * @returns {boolean}
+     */
+    isPointInReferenceImage(x, y) {
+        if (!this.referenceImage.visible) return false;
+
+        const ref = this.referenceImage;
+        return x >= ref.x && x <= ref.x + ref.width &&
+               y >= ref.y && y <= ref.y + ref.height;
+    }
+
+    /**
+     * Select the reference image
+     */
+    selectReferenceImage() {
+        this.referenceImage.isSelected = true;
+
+        // Notify selection change
+        if (this.onSelectionChange) {
+            this.onSelectionChange(this.selectedPieces, true);  // true = reference selected
+        }
+    }
+
+    /**
+     * Deselect the reference image
+     */
+    deselectReferenceImage() {
+        const wasSelected = this.referenceImage.isSelected;
+        this.referenceImage.isSelected = false;
+
+        if (wasSelected && this.onSelectionChange) {
+            this.onSelectionChange(this.selectedPieces, false);
+        }
+    }
+
+    /**
+     * Move the reference image
+     * @param {number} dx - Delta X
+     * @param {number} dy - Delta Y
+     */
+    moveReferenceImage(dx, dy) {
+        this.referenceImage.x += dx;
+        this.referenceImage.y += dy;
+    }
+
+    /**
+     * Toggle reference image visibility
+     * @returns {boolean} New visibility state
+     */
+    toggleReferenceImage() {
+        this.referenceImage.visible = !this.referenceImage.visible;
+
+        // If showing for first time, position at puzzle center
+        if (this.referenceImage.visible && this.referenceImage.x === 0 && this.referenceImage.y === 0) {
+            const bounds = this.calculatePuzzleBounds();
+            // Get the first piece to determine tabPadding
+            if (this.pieces.length > 0) {
+                const tabPadding = this.pieces[0].tabPadding;
+                this.referenceImage.x = bounds.minX + tabPadding;
+                this.referenceImage.y = bounds.minY + tabPadding;
+            }
+        }
+
+        return this.referenceImage.visible;
     }
 }

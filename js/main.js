@@ -1,10 +1,10 @@
 /**
  * Main application file - Multiuser Jigsaw Puzzle
  * Handles puzzle lifecycle, auto-save, SSE sync, and user management
- * @version 2.0.0
+ * @version 2.0.2
  */
 
-const VERSION = '2.0.0';
+const VERSION = '2.0.2';
 
 let puzzleCutter;
 let puzzleEngine;
@@ -22,17 +22,19 @@ let isApplyingRemoteUpdate = false;
 let userPrefs = {
     userId: null,
     displayName: 'Player',
-    color: '#667eea'
+    color: '#667eea',
+    canvasColor: '#f0f0f0'
 };
 
 // UI elements
 let canvas;
 let pieceCountSelect;
+let pieceCountGroup;
 let imageSelect;
 let startBtn;
 let resetViewBtn;
+let referenceBtn;
 let progressText;
-let touchInfo;
 let settingsBtn;
 let settingsModal;
 
@@ -56,11 +58,12 @@ async function init() {
     // Get UI elements
     canvas = document.getElementById('puzzleCanvas');
     pieceCountSelect = document.getElementById('pieceCount');
+    pieceCountGroup = document.getElementById('pieceCountGroup');
     imageSelect = document.getElementById('imageSelect');
     startBtn = document.getElementById('startBtn');
     resetViewBtn = document.getElementById('resetViewBtn');
+    referenceBtn = document.getElementById('referenceBtn');
     progressText = document.getElementById('progressText');
-    touchInfo = document.getElementById('touchInfo');
     settingsBtn = document.getElementById('settingsBtn');
     settingsModal = document.getElementById('settingsModal');
 
@@ -101,6 +104,11 @@ async function init() {
 function setupEventListeners() {
     startBtn.addEventListener('click', startNewPuzzle);
     resetViewBtn.addEventListener('click', () => puzzleEngine.resetView());
+
+    // Reference image toggle
+    if (referenceBtn) {
+        referenceBtn.addEventListener('click', toggleReferenceImage);
+    }
 
     // Image dropdown change - switch puzzles
     imageSelect.addEventListener('change', handleImageChange);
@@ -182,8 +190,15 @@ async function loadUserPrefs() {
     // Update settings form if present
     const nameInput = document.getElementById('userNameInput');
     const colorInput = document.getElementById('userColorInput');
+    const canvasColorInput = document.getElementById('canvasColorInput');
     if (nameInput) nameInput.value = userPrefs.displayName;
     if (colorInput) colorInput.value = userPrefs.color;
+    if (canvasColorInput) canvasColorInput.value = userPrefs.canvasColor;
+
+    // Apply canvas color to engine
+    if (puzzleEngine && userPrefs.canvasColor) {
+        puzzleEngine.setBackgroundColor(userPrefs.canvasColor);
+    }
 }
 
 /**
@@ -199,6 +214,23 @@ async function saveUserPrefs() {
     } catch (e) {
         console.error('Failed to save prefs to server:', e);
     }
+}
+
+/**
+ * Toggle reference image visibility
+ */
+function toggleReferenceImage() {
+    if (!puzzleLoaded || !puzzleEngine) {
+        showMessage('Load a puzzle first');
+        return;
+    }
+
+    const isVisible = puzzleEngine.toggleReferenceImage();
+    referenceBtn.classList.toggle('active', isVisible);
+
+    // Save state after toggle
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => saveSharedPuzzle(), 500);
 }
 
 /**
@@ -236,7 +268,7 @@ async function autoLoadPuzzle() {
             await restoreSharedPuzzle(result.data.puzzle);
             puzzleLoaded = true;
             startBtn.style.display = 'none';
-            pieceCountSelect.disabled = true;  // Disable piece count when puzzle active
+            pieceCountGroup.style.display = 'none';
 
             hideLoadingOverlay();
             showMessage('Puzzle loaded!');
@@ -245,7 +277,7 @@ async function autoLoadPuzzle() {
             puzzleEngine.setPieces([]);
             puzzleLoaded = false;
             startBtn.style.display = '';
-            pieceCountSelect.disabled = false;
+            pieceCountGroup.style.display = '';
             hideLoadingOverlay();
             showMessage('Click "Start New Puzzle" to begin!');
         }
@@ -254,7 +286,7 @@ async function autoLoadPuzzle() {
         hideLoadingOverlay();
         puzzleLoaded = false;
         startBtn.style.display = '';
-        pieceCountSelect.disabled = false;
+        pieceCountGroup.style.display = '';
         showMessage('Ready to start a new puzzle');
     }
 }
@@ -281,11 +313,15 @@ async function startNewPuzzle() {
 
         // Set pieces in engine
         puzzleEngine.setPieces(pieces);
+
+        // Set the source image for reference image feature
+        puzzleEngine.setSourceImage(puzzleCutter.image);
+
         puzzleLoaded = true;
 
-        // Hide start button and disable piece selector since puzzle is active
+        // Hide start button and piece selector since puzzle is active
         startBtn.style.display = 'none';
-        pieceCountSelect.disabled = true;
+        pieceCountGroup.style.display = 'none';
 
         // Save initial state
         await saveSharedPuzzle();
@@ -335,6 +371,9 @@ async function restoreSharedPuzzle(puzzleData) {
         // Set pieces in engine
         puzzleEngine.setPieces(pieces);
 
+        // Set the source image for reference image feature
+        puzzleEngine.setSourceImage(puzzleCutter.image);
+
         // Rebuild groups
         rebuildGroups(puzzleData.pieces);
 
@@ -351,6 +390,18 @@ async function restoreSharedPuzzle(puzzleData) {
         // Apply remote selections
         if (puzzleData.selections) {
             puzzleEngine.setRemoteSelections(puzzleData.selections);
+        }
+
+        // Restore reference image state
+        if (puzzleData.referenceImage) {
+            puzzleEngine.referenceImage.visible = puzzleData.referenceImage.visible;
+            puzzleEngine.referenceImage.x = puzzleData.referenceImage.x;
+            puzzleEngine.referenceImage.y = puzzleData.referenceImage.y;
+
+            // Update button state
+            if (referenceBtn) {
+                referenceBtn.classList.toggle('active', puzzleEngine.referenceImage.visible);
+            }
         }
     } catch (error) {
         console.error('Error restoring puzzle:', error);
@@ -408,8 +459,10 @@ function handlePieceMoveEnd(movedPieces) {
 
 /**
  * Handle selection change - broadcast to other users
+ * @param {Array} selectedPieces - Array of selected pieces
+ * @param {boolean} referenceSelected - Whether reference image is selected
  */
-function handleSelectionChange(selectedPieces) {
+function handleSelectionChange(selectedPieces, referenceSelected = false) {
     if (!puzzleLoaded || !currentImagePath) return;
 
     // Debounce selection broadcast
@@ -420,7 +473,8 @@ function handleSelectionChange(selectedPieces) {
             currentImagePath,
             pieceIds,
             userPrefs.color,
-            userPrefs.displayName
+            userPrefs.displayName,
+            referenceSelected
         ).catch(e => console.error('Selection broadcast failed:', e));
     }, 100);
 }
@@ -480,6 +534,11 @@ function getPuzzleState() {
             x: puzzleEngine.camera.x,
             y: puzzleEngine.camera.y,
             scale: puzzleEngine.camera.scale
+        },
+        referenceImage: {
+            visible: puzzleEngine.referenceImage.visible,
+            x: puzzleEngine.referenceImage.x,
+            y: puzzleEngine.referenceImage.y
         }
     };
 }
@@ -540,6 +599,18 @@ function handleRemotePuzzleUpdate(data) {
         // Update stats
         puzzleEngine.stats.placedPieces = remotePuzzle.pieces.filter(p => p.isPlaced || p.isLocked).length;
 
+        // Sync reference image position (unless locally selected)
+        if (remotePuzzle.referenceImage && !puzzleEngine.referenceImage.isSelected) {
+            puzzleEngine.referenceImage.visible = remotePuzzle.referenceImage.visible;
+            puzzleEngine.referenceImage.x = remotePuzzle.referenceImage.x;
+            puzzleEngine.referenceImage.y = remotePuzzle.referenceImage.y;
+
+            // Update button state
+            if (referenceBtn) {
+                referenceBtn.classList.toggle('active', puzzleEngine.referenceImage.visible);
+            }
+        }
+
     } finally {
         isApplyingRemoteUpdate = false;
     }
@@ -575,9 +646,16 @@ function closeSettingsModal() {
 async function saveSettings() {
     const nameInput = document.getElementById('userNameInput');
     const colorInput = document.getElementById('userColorInput');
+    const canvasColorInput = document.getElementById('canvasColorInput');
 
     if (nameInput) userPrefs.displayName = nameInput.value || 'Player';
     if (colorInput) userPrefs.color = colorInput.value || '#667eea';
+    if (canvasColorInput) userPrefs.canvasColor = canvasColorInput.value || '#f0f0f0';
+
+    // Apply canvas color immediately
+    if (puzzleEngine && userPrefs.canvasColor) {
+        puzzleEngine.setBackgroundColor(userPrefs.canvasColor);
+    }
 
     await saveUserPrefs();
     closeSettingsModal();
@@ -610,9 +688,9 @@ async function handleResetPuzzle() {
         puzzleEngine.setPieces([]);
         puzzleLoaded = false;
 
-        // Show start button and re-enable piece selector
+        // Show start button and piece selector
         startBtn.style.display = '';
-        pieceCountSelect.disabled = false;
+        pieceCountGroup.style.display = '';
 
         closeSettingsModal();
         showMessage('Puzzle reset! Click Start to begin again.');
@@ -711,25 +789,6 @@ function updateStats() {
 
     const progress = puzzleEngine.getProgress();
     progressText.textContent = `${progress}% Complete`;
-
-    // Update touch info
-    if (puzzleEngine.input.isDragging) {
-        touchInfo.textContent = 'Moving piece';
-    } else if (puzzleEngine.input.isPinching) {
-        touchInfo.textContent = 'Zooming';
-    } else if (puzzleEngine.input.isPanning) {
-        touchInfo.textContent = 'Panning';
-    } else if (puzzleEngine.input.isSelecting) {
-        touchInfo.textContent = 'Selecting';
-    } else if (puzzleEngine.input.isDrawingLasso) {
-        touchInfo.textContent = 'Lasso selecting';
-    } else if (puzzleEngine.input.isLassoMode) {
-        touchInfo.textContent = 'Lasso mode';
-    } else if (puzzleEngine.edgePanning.active) {
-        touchInfo.textContent = 'Edge panning';
-    } else {
-        touchInfo.textContent = '';
-    }
 
     // Check for completion
     if (progress === 100 && puzzleEngine.stats.totalPieces > 0) {

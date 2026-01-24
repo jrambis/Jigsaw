@@ -144,14 +144,16 @@ class PuzzleAPI {
      * @param {Array<number>} pieceIds - Selected piece IDs
      * @param {string} color - User's color
      * @param {string} displayName - User's display name
+     * @param {boolean} referenceSelected - Whether reference image is selected
      * @returns {Promise<Object>}
      */
-    async updateSelection(imagePath, pieceIds, color, displayName) {
+    async updateSelection(imagePath, pieceIds, color, displayName, referenceSelected = false) {
         return await this.request('updateSelection', 'POST', {
             image: imagePath,
             pieceIds,
             color,
-            displayName
+            displayName,
+            referenceSelected
         });
     }
 

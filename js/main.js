@@ -27,6 +27,7 @@ let touchInfo;
 let saveBtn;
 let loadBtn;
 let savedPuzzlesModal;
+let debugLog;
 
 /**
  * Initialize the application
@@ -48,6 +49,7 @@ function init() {
     progressText = document.getElementById('progressText');
     touchInfo = document.getElementById('touchInfo');
     savedPuzzlesModal = document.getElementById('savedPuzzlesModal');
+    debugLog = document.getElementById('debugLog');
 
     // Initialize puzzle components
     puzzleCutter = new PuzzleCutter();
@@ -143,6 +145,13 @@ function updateStats() {
     // Check for completion
     if (progress === 100 && puzzleEngine.stats.totalPieces > 0) {
         showCompletionMessage();
+    }
+
+    // Update debug log
+    if (debugLog && puzzleEngine.debugMessages.length > 0) {
+        debugLog.style.display = 'block';
+        debugLog.innerHTML = puzzleEngine.debugMessages.join('<br>');
+        debugLog.scrollTop = debugLog.scrollHeight;
     }
 }
 

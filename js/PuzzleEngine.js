@@ -45,10 +45,9 @@ class PuzzleEngine {
         // Hammer.js manager
         this.hammer = null;
 
-        // Debug logging
-        this.debugLog = document.getElementById('debugLog');
-        this.debugEnabled = false;
-        this.setupDebugToggle();
+        // Debug logging - stores messages for main.js to display
+        this.debugMessages = [];
+        this.debugEnabled = true; // Always on for now
 
         // Touch-specific settings
         this.touchSettings = {
@@ -451,39 +450,16 @@ class PuzzleEngine {
     }
 
     /**
-     * Setup debug toggle button
-     */
-    setupDebugToggle() {
-        const btn = document.getElementById('toggleDebug');
-        if (btn) {
-            const toggle = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.debugEnabled = !this.debugEnabled;
-                if (this.debugLog) {
-                    this.debugLog.style.display = this.debugEnabled ? 'block' : 'none';
-                }
-                btn.textContent = this.debugEnabled ? 'Hide Debug' : 'Show Debug';
-            };
-            btn.addEventListener('click', toggle);
-            btn.addEventListener('touchend', toggle);
-        }
-    }
-
-    /**
-     * Log debug message to on-screen overlay
+     * Log debug message - stores in array for main.js to display
      */
     log(msg) {
-        if (!this.debugEnabled || !this.debugLog) return;
+        if (!this.debugEnabled) return;
         const time = new Date().toISOString().substr(11, 12);
-        const line = document.createElement('div');
-        line.textContent = `${time} ${msg}`;
-        this.debugLog.appendChild(line);
-        // Keep last 50 lines
-        while (this.debugLog.children.length > 50) {
-            this.debugLog.removeChild(this.debugLog.firstChild);
+        this.debugMessages.push(`${time} ${msg}`);
+        // Keep last 30 messages
+        while (this.debugMessages.length > 30) {
+            this.debugMessages.shift();
         }
-        this.debugLog.scrollTop = this.debugLog.scrollHeight;
     }
 
     /**

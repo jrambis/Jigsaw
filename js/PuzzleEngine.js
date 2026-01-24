@@ -45,6 +45,11 @@ class PuzzleEngine {
         // Hammer.js manager
         this.hammer = null;
 
+        // Debug logging
+        this.debugLog = document.getElementById('debugLog');
+        this.debugEnabled = false;
+        this.setupDebugToggle();
+
         // Touch-specific settings
         this.touchSettings = {
             holdDelay: 300, // ms to wait before activating piece drag
@@ -246,11 +251,16 @@ class PuzzleEngine {
         const screenY = e.center.y - rect.top;
         const worldPos = this.screenToWorld(screenX, screenY);
 
+        const oldPanX = this.input.panStartScreenX;
+        const oldPanY = this.input.panStartScreenY;
+
         this.input.panStartScreenX = screenX;
         this.input.panStartScreenY = screenY;
         this.input.startX = worldPos.x;
         this.input.startY = worldPos.y;
         this.input.touchCount = e.pointers.length;
+
+        this.log(`PAN START ptrs=${e.pointers.length} screen=(${screenX.toFixed(0)},${screenY.toFixed(0)}) oldPan=(${oldPanX.toFixed(0)},${oldPanY.toFixed(0)}) isPinching=${this.input.isPinching}`);
 
         // If we're dragging a piece (from press/hold), continue that
         if (this.input.isDragging) {
@@ -322,6 +332,12 @@ class PuzzleEngine {
      * Handle Hammer pan end
      */
     onHammerPanEnd(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.center ? e.center.x - rect.left : 0;
+        const screenY = e.center ? e.center.y - rect.top : 0;
+
+        this.log(`PAN END ptrs=${e.pointers?.length} screen=(${screenX.toFixed(0)},${screenY.toFixed(0)}) wasPanning=${this.input.isPanning}`);
+
         if (this.input.isDragging) {
             this.checkSnapping();
             this.input.isDragging = false;
@@ -357,6 +373,8 @@ class PuzzleEngine {
         this.input.pinchStartScreenX = screenX;
         this.input.pinchStartScreenY = screenY;
         this.input.touchCount = e.pointers.length;
+
+        this.log(`PINCH START ptrs=${e.pointers.length} screen=(${screenX.toFixed(0)},${screenY.toFixed(0)}) scale=${this.camera.scale.toFixed(2)}`);
     }
 
     /**
@@ -392,13 +410,20 @@ class PuzzleEngine {
         this.input.isPinching = false;
         this.input.touchCount = e.pointers ? e.pointers.length : 0;
 
+        const hasCenter = !!e.center;
+        let newPanX = 'N/A', newPanY = 'N/A';
+
         // Reset pan start coordinates to current position
         // This prevents jump when transitioning from pinch to pan with remaining finger
         if (e.center) {
             const rect = this.canvas.getBoundingClientRect();
             this.input.panStartScreenX = e.center.x - rect.left;
             this.input.panStartScreenY = e.center.y - rect.top;
+            newPanX = this.input.panStartScreenX.toFixed(0);
+            newPanY = this.input.panStartScreenY.toFixed(0);
         }
+
+        this.log(`PINCH END ptrs=${e.pointers?.length} hasCenter=${hasCenter} newPanStart=(${newPanX},${newPanY})`);
     }
 
     /**
@@ -423,6 +448,38 @@ class PuzzleEngine {
         const container = this.canvas.parentElement;
         this.canvas.width = container.clientWidth;
         this.canvas.height = container.clientHeight;
+    }
+
+    /**
+     * Setup debug toggle button
+     */
+    setupDebugToggle() {
+        const btn = document.getElementById('toggleDebug');
+        if (btn) {
+            btn.addEventListener('click', () => {
+                this.debugEnabled = !this.debugEnabled;
+                if (this.debugLog) {
+                    this.debugLog.style.display = this.debugEnabled ? 'block' : 'none';
+                }
+                btn.textContent = this.debugEnabled ? 'Hide Debug' : 'Show Debug';
+            });
+        }
+    }
+
+    /**
+     * Log debug message to on-screen overlay
+     */
+    log(msg) {
+        if (!this.debugEnabled || !this.debugLog) return;
+        const time = new Date().toISOString().substr(11, 12);
+        const line = document.createElement('div');
+        line.textContent = `${time} ${msg}`;
+        this.debugLog.appendChild(line);
+        // Keep last 50 lines
+        while (this.debugLog.children.length > 50) {
+            this.debugLog.removeChild(this.debugLog.firstChild);
+        }
+        this.debugLog.scrollTop = this.debugLog.scrollHeight;
     }
 
     /**

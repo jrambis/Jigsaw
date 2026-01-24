@@ -29,15 +29,21 @@ class PuzzleEngine {
             // Screen coordinates for panning (separate from world coords)
             panStartScreenX: 0,
             panStartScreenY: 0,
-            // Pinch-to-zoom state
-            pinchStartDistance: 0,
+            // Pinch-to-zoom state (world coords captured at start - no drift!)
             pinchStartScale: 1,
-            pinchCenterX: 0,
-            pinchCenterY: 0,
-            dragStartTime: 0,
-            holdTimer: null,
+            pinchWorldX: 0,  // World X under pinch center at start
+            pinchWorldY: 0,  // World Y under pinch center at start
+            pinchStartCamX: 0,
+            pinchStartCamY: 0,
+            pinchStartScreenX: 0,
+            pinchStartScreenY: 0,
+            // Piece being held for drag
+            heldPiece: null,
             touchCount: 0
         };
+
+        // Hammer.js manager
+        this.hammer = null;
 
         // Touch-specific settings
         this.touchSettings = {
@@ -124,310 +130,166 @@ class PuzzleEngine {
     }
 
     /**
-     * Setup event listeners for mouse and touch
+     * Setup event listeners for mouse, touch, and Hammer.js gestures
      */
     setupEventListeners() {
-        // Mouse events
-        this.canvas.addEventListener('mousedown', (e) => this.handlePointerDown(e));
-        this.canvas.addEventListener('mousemove', (e) => this.handlePointerMove(e));
-        this.canvas.addEventListener('mouseup', (e) => this.handlePointerUp(e));
+        // Mouse wheel zoom (Hammer doesn't handle wheel)
         this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
-
-        // Touch events
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
-        this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
-        this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e), { passive: false });
 
         // Window resize
         window.addEventListener('resize', () => this.resizeCanvas());
 
         // Prevent context menu
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Setup Hammer.js for gesture recognition
+        this.setupHammer();
     }
 
     /**
-     * Resize canvas to fill container
+     * Initialize Hammer.js manager
      */
-    resizeCanvas() {
-        const container = this.canvas.parentElement;
-        this.canvas.width = container.clientWidth;
-        this.canvas.height = container.clientHeight;
+    setupHammer() {
+        this.hammer = new Hammer.Manager(this.canvas);
+        this.setupHammerRecognizers();
+        this.setupHammerEvents();
     }
 
     /**
-     * Handle touch start event
-     * @param {TouchEvent} e - Touch event
+     * Configure Hammer.js gesture recognizers
      */
-    handleTouchStart(e) {
-        e.preventDefault();
+    setupHammerRecognizers() {
+        // Press: 300ms hold for piece drag activation
+        const press = new Hammer.Press({
+            time: this.touchSettings.holdDelay,
+            threshold: 9
+        });
 
-        const touches = e.touches;
-        this.input.touchCount = touches.length;
+        // Pan: camera panning or piece dragging
+        const pan = new Hammer.Pan({
+            threshold: 10,
+            direction: Hammer.DIRECTION_ALL,
+            pointers: 1
+        });
 
-        if (touches.length === 1) {
-            // Single touch - could be pan or piece drag
-            const touch = touches[0];
-            const rect = this.canvas.getBoundingClientRect();
-            const screenX = touch.clientX - rect.left;
-            const screenY = touch.clientY - rect.top;
-            const worldPos = this.screenToWorld(screenX, screenY);
+        // Pinch: two-finger zoom
+        const pinch = new Hammer.Pinch({
+            threshold: 0
+        });
 
-            this.input.startX = worldPos.x;
-            this.input.startY = worldPos.y;
-            this.input.currentX = worldPos.x;
-            this.input.currentY = worldPos.y;
-            // Store screen coords for panning
-            this.input.panStartScreenX = screenX;
-            this.input.panStartScreenY = screenY;
-            this.input.dragStartTime = Date.now();
+        // Tap: deselect on background
+        const tap = new Hammer.Tap({
+            taps: 1
+        });
 
-            // Check if touching a piece
-            const piece = this.getPieceAt(worldPos.x, worldPos.y);
+        // Add recognizers
+        this.hammer.add([pinch, pan, press, tap]);
 
-            if (piece) {
-                // Start hold timer - if user holds for touchSettings.holdDelay ms, activate piece drag
-                this.input.holdTimer = setTimeout(() => {
-                    this.activatePieceDrag(piece, worldPos.x, worldPos.y);
-                }, this.touchSettings.holdDelay);
-            } else {
-                // No piece, activate pan immediately and deselect
-                this.input.isPanning = true;
-                this.clearSelection();
-            }
-
-        } else if (touches.length === 2) {
-            // Two-finger touch - pinch-to-zoom
-            this.clearHoldTimer();
-            this.input.isPanning = false;
-            this.input.isPinching = true;
-            this._pinchLogCount = 0; // Reset log counter
-
-            const touch1 = touches[0];
-            const touch2 = touches[1];
-            const rect = this.canvas.getBoundingClientRect();
-
-            // Calculate initial distance between two fingers
-            const dx = touch2.clientX - touch1.clientX;
-            const dy = touch2.clientY - touch1.clientY;
-            this.input.pinchStartDistance = Math.sqrt(dx * dx + dy * dy);
-            this.input.pinchStartScale = this.camera.scale;
-
-            // Calculate center point between fingers (in screen coords)
-            this.input.pinchCenterX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
-            this.input.pinchCenterY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
-
-            console.log('=== PINCH START ===');
-            console.log('Initial distance:', this.input.pinchStartDistance.toFixed(1));
-            console.log('Initial scale:', this.input.pinchStartScale.toFixed(3));
-            console.log('Pinch center:', this.input.pinchCenterX.toFixed(1), this.input.pinchCenterY.toFixed(1));
-            console.log('Camera pos:', this.camera.x.toFixed(1), this.camera.y.toFixed(1));
-            console.log('===================');
-        }
+        // Configure relationships
+        pan.requireFailure(press);  // Pan waits for press to fail (movement cancels hold)
+        pinch.recognizeWith(pan);   // Allow pan while pinching
     }
 
     /**
-     * Handle touch move event
-     * @param {TouchEvent} e - Touch event
+     * Setup Hammer.js event handlers
      */
-    handleTouchMove(e) {
-        e.preventDefault();
+    setupHammerEvents() {
+        // Press (hold) - activates piece drag
+        this.hammer.on('press', (e) => this.onHammerPress(e));
+        this.hammer.on('pressup', (e) => this.onHammerPressUp(e));
 
-        if (e.touches.length === 1) {
-            const touch = e.touches[0];
-            const rect = this.canvas.getBoundingClientRect();
-            const screenX = touch.clientX - rect.left;
-            const screenY = touch.clientY - rect.top;
-            const worldPos = this.screenToWorld(screenX, screenY);
+        // Pan - camera or piece movement
+        this.hammer.on('panstart', (e) => this.onHammerPanStart(e));
+        this.hammer.on('panmove', (e) => this.onHammerPanMove(e));
+        this.hammer.on('panend pancancel', (e) => this.onHammerPanEnd(e));
 
-            // If moved more than 10px in screen space, cancel hold timer and activate pan if not dragging
-            const screenDx = Math.abs(screenX - this.input.panStartScreenX);
-            const screenDy = Math.abs(screenY - this.input.panStartScreenY);
+        // Pinch - zoom
+        this.hammer.on('pinchstart', (e) => this.onHammerPinchStart(e));
+        this.hammer.on('pinchmove', (e) => this.onHammerPinchMove(e));
+        this.hammer.on('pinchend pinchcancel', (e) => this.onHammerPinchEnd(e));
 
-            if ((screenDx > 10 || screenDy > 10) && !this.input.isDragging) {
-                this.clearHoldTimer();
-                if (!this.input.isPanning) {
-                    this.input.isPanning = true;
-                }
-            }
-
-            this.input.currentX = worldPos.x;
-            this.input.currentY = worldPos.y;
-
-            if (this.input.isDragging) {
-                // Move selected pieces in world coordinates
-                this.moveSelectedPieces(
-                    worldPos.x - this.input.startX,
-                    worldPos.y - this.input.startY
-                );
-                this.input.startX = worldPos.x;
-                this.input.startY = worldPos.y;
-
-                // Edge panning
-                this.updateEdgePanning(screenX, screenY);
-
-            } else if (this.input.isPanning) {
-                // Pan camera using screen coordinates (not world!)
-                const dx = screenX - this.input.panStartScreenX;
-                const dy = screenY - this.input.panStartScreenY;
-                this.camera.x += dx;
-                this.camera.y += dy;
-                // Update pan start for next frame
-                this.input.panStartScreenX = screenX;
-                this.input.panStartScreenY = screenY;
-            }
-
-        } else if (e.touches.length === 2 && this.input.isPinching) {
-            // Pinch-to-zoom
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
-            const rect = this.canvas.getBoundingClientRect();
-
-            // Calculate current distance between fingers
-            const dx = touch2.clientX - touch1.clientX;
-            const dy = touch2.clientY - touch1.clientY;
-            const currentDistance = Math.sqrt(dx * dx + dy * dy);
-
-            // Calculate new scale based on pinch ratio
-            const pinchRatio = currentDistance / this.input.pinchStartDistance;
-            const newScale = Math.max(0.1, Math.min(5, this.input.pinchStartScale * pinchRatio));
-
-            // Calculate current center point between fingers
-            const newCenterX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
-            const newCenterY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
-
-            // Store old values for logging
-            const oldScale = this.camera.scale;
-            const oldCamX = this.camera.x;
-            const oldCamY = this.camera.y;
-
-            // Get world position under pinch center BEFORE scale change
-            const worldPos = this.screenToWorld(this.input.pinchCenterX, this.input.pinchCenterY);
-
-            // Apply new scale
-            this.camera.scale = newScale;
-
-            // Convert world position back to screen - it will be offset now
-            const screenPos = this.worldToScreen(worldPos.x, worldPos.y);
-
-            // Calculate zoom adjustment
-            const zoomAdjustX = this.input.pinchCenterX - screenPos.x;
-            const zoomAdjustY = this.input.pinchCenterY - screenPos.y;
-
-            // Adjust camera so the world point stays under the pinch center
-            this.camera.x += zoomAdjustX;
-            this.camera.y += zoomAdjustY;
-
-            // Also allow panning while pinching by tracking finger movement
-            const centerDx = newCenterX - this.input.pinchCenterX;
-            const centerDy = newCenterY - this.input.pinchCenterY;
-            this.camera.x += centerDx;
-            this.camera.y += centerDy;
-
-            // Throttled logging (every 10th frame approx)
-            if (!this._pinchLogCount) this._pinchLogCount = 0;
-            this._pinchLogCount++;
-            if (this._pinchLogCount % 10 === 0) {
-                console.log('=== PINCH ZOOM ===');
-                console.log('Scale:', oldScale.toFixed(3), '->', newScale.toFixed(3), '(ratio:', pinchRatio.toFixed(3) + ')');
-                console.log('Pinch center (screen):', this.input.pinchCenterX.toFixed(1), this.input.pinchCenterY.toFixed(1));
-                console.log('World pos under center:', worldPos.x.toFixed(1), worldPos.y.toFixed(1));
-                console.log('Screen pos after scale:', screenPos.x.toFixed(1), screenPos.y.toFixed(1));
-                console.log('Zoom adjust:', zoomAdjustX.toFixed(1), zoomAdjustY.toFixed(1));
-                console.log('Pan adjust:', centerDx.toFixed(1), centerDy.toFixed(1));
-                console.log('Camera:', oldCamX.toFixed(1), oldCamY.toFixed(1), '->', this.camera.x.toFixed(1), this.camera.y.toFixed(1));
-                console.log('==================');
-            }
-
-            // Update pinch center for next frame
-            this.input.pinchCenterX = newCenterX;
-            this.input.pinchCenterY = newCenterY;
-        }
+        // Tap - deselect
+        this.hammer.on('tap', (e) => this.onHammerTap(e));
     }
 
     /**
-     * Handle touch end event
-     * @param {TouchEvent} e - Touch event
+     * Handle Hammer press (hold) event - activates piece drag
      */
-    handleTouchEnd(e) {
-        e.preventDefault();
-
-        this.clearHoldTimer();
-
-        if (this.input.isDragging) {
-            // Check for snapping
-            this.checkSnapping();
-            this.input.isDragging = false;
-            this.edgePanning.active = false;
-
-        } else if (this.input.isPinching) {
-            // End pinch-to-zoom
-            console.log('=== PINCH END ===');
-            console.log('Final scale:', this.camera.scale.toFixed(3));
-            console.log('Final camera:', this.camera.x.toFixed(1), this.camera.y.toFixed(1));
-            console.log('=================');
-            this.input.isPinching = false;
-
-        } else if (this.input.isSelecting) {
-            // Complete selection
-            this.selectPiecesInBox();
-            this.input.isSelecting = false;
-
-        } else if (this.input.isPanning) {
-            this.input.isPanning = false;
-        }
-
-        this.input.touchCount = e.touches.length;
-    }
-
-    /**
-     * Handle mouse pointer down
-     * @param {MouseEvent} e - Mouse event
-     */
-    handlePointerDown(e) {
+    onHammerPress(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
+        const screenX = e.center.x - rect.left;
+        const screenY = e.center.y - rect.top;
         const worldPos = this.screenToWorld(screenX, screenY);
 
-        this.input.startX = worldPos.x;
-        this.input.startY = worldPos.y;
-        this.input.currentX = worldPos.x;
-        this.input.currentY = worldPos.y;
-        // Store screen coords for panning
+        const piece = this.getPieceAt(worldPos.x, worldPos.y);
+        if (piece) {
+            this.input.heldPiece = piece;
+            this.activatePieceDrag(piece, worldPos.x, worldPos.y);
+            this.input.startX = worldPos.x;
+            this.input.startY = worldPos.y;
+        }
+    }
+
+    /**
+     * Handle Hammer press release
+     */
+    onHammerPressUp(e) {
+        this.input.heldPiece = null;
+    }
+
+    /**
+     * Handle Hammer pan start
+     */
+    onHammerPanStart(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.center.x - rect.left;
+        const screenY = e.center.y - rect.top;
+        const worldPos = this.screenToWorld(screenX, screenY);
+
         this.input.panStartScreenX = screenX;
         this.input.panStartScreenY = screenY;
+        this.input.startX = worldPos.x;
+        this.input.startY = worldPos.y;
+        this.input.touchCount = e.pointers.length;
 
-        if (e.shiftKey) {
+        // If we're dragging a piece (from press/hold), continue that
+        if (this.input.isDragging) {
+            return;
+        }
+
+        // Check for mouse modifier keys (srcEvent gives access to original event)
+        const srcEvent = e.srcEvent;
+        if (srcEvent && srcEvent.shiftKey) {
             // Shift + drag = selection box
             this.input.isSelecting = true;
-        } else if (e.altKey) {
-            // Alt + drag = move piece
+            return;
+        }
+
+        if (srcEvent && srcEvent.altKey) {
+            // Alt + drag = move piece (mouse only)
             const piece = this.getPieceAt(worldPos.x, worldPos.y);
             if (piece) {
                 this.activatePieceDrag(piece, worldPos.x, worldPos.y);
-            }
-        } else {
-            // Regular drag = pan, deselect if clicking on empty space
-            this.input.isPanning = true;
-            const piece = this.getPieceAt(worldPos.x, worldPos.y);
-            if (!piece) {
-                this.clearSelection();
+                return;
             }
         }
+
+        // Otherwise, start camera panning
+        this.input.isPanning = true;
     }
 
     /**
-     * Handle mouse pointer move
-     * @param {MouseEvent} e - Mouse event
+     * Handle Hammer pan move
      */
-    handlePointerMove(e) {
+    onHammerPanMove(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
+        const screenX = e.center.x - rect.left;
+        const screenY = e.center.y - rect.top;
         const worldPos = this.screenToWorld(screenX, screenY);
 
         this.input.currentX = worldPos.x;
         this.input.currentY = worldPos.y;
+        this.input.touchCount = e.pointers.length;
 
         if (this.input.isDragging) {
             // Move selected pieces in world coordinates
@@ -438,32 +300,121 @@ class PuzzleEngine {
             this.input.startX = worldPos.x;
             this.input.startY = worldPos.y;
 
-        } else if (this.input.isPanning) {
-            // Pan camera using screen coordinates (not world!)
+            // Edge panning
+            this.updateEdgePanning(screenX, screenY);
+
+        } else if (this.input.isSelecting) {
+            // Selection box just updates currentX/currentY (already done above)
+            // The selection box is drawn in render loop using startX/Y and currentX/Y
+
+        } else if (this.input.isPanning && !this.input.isPinching) {
+            // Pan camera using screen coordinates
             const dx = screenX - this.input.panStartScreenX;
             const dy = screenY - this.input.panStartScreenY;
             this.camera.x += dx;
             this.camera.y += dy;
-            // Update pan start for next frame
             this.input.panStartScreenX = screenX;
             this.input.panStartScreenY = screenY;
         }
     }
 
     /**
-     * Handle mouse pointer up
-     * @param {MouseEvent} e - Mouse event
+     * Handle Hammer pan end
      */
-    handlePointerUp(e) {
+    onHammerPanEnd(e) {
         if (this.input.isDragging) {
             this.checkSnapping();
             this.input.isDragging = false;
+            this.edgePanning.active = false;
         } else if (this.input.isSelecting) {
             this.selectPiecesInBox();
             this.input.isSelecting = false;
-        } else if (this.input.isPanning) {
-            this.input.isPanning = false;
         }
+
+        this.input.isPanning = false;
+        this.input.heldPiece = null;
+        this.input.touchCount = 0;
+    }
+
+    /**
+     * Handle Hammer pinch start - capture world position ONCE to prevent drift
+     */
+    onHammerPinchStart(e) {
+        this.input.isPinching = true;
+        this.input.isPanning = false;
+
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.center.x - rect.left;
+        const screenY = e.center.y - rect.top;
+
+        // Capture world position under pinch center ONCE at start
+        const worldPos = this.screenToWorld(screenX, screenY);
+        this.input.pinchWorldX = worldPos.x;
+        this.input.pinchWorldY = worldPos.y;
+        this.input.pinchStartScale = this.camera.scale;
+        this.input.pinchStartCamX = this.camera.x;
+        this.input.pinchStartCamY = this.camera.y;
+        this.input.pinchStartScreenX = screenX;
+        this.input.pinchStartScreenY = screenY;
+        this.input.touchCount = e.pointers.length;
+    }
+
+    /**
+     * Handle Hammer pinch move - recalculate from scratch to prevent drift
+     */
+    onHammerPinchMove(e) {
+        if (!this.input.isPinching) return;
+
+        const rect = this.canvas.getBoundingClientRect();
+        const currentScreenX = e.center.x - rect.left;
+        const currentScreenY = e.center.y - rect.top;
+
+        // Calculate new scale from Hammer's cumulative scale value
+        const newScale = Math.max(0.1, Math.min(5, this.input.pinchStartScale * e.scale));
+
+        // Calculate how much the pinch center has moved (for pan-while-pinching)
+        const panDeltaX = currentScreenX - this.input.pinchStartScreenX;
+        const panDeltaY = currentScreenY - this.input.pinchStartScreenY;
+
+        // Recalculate camera position from scratch (no accumulation = no drift!)
+        // The world point that was under the original pinch center should now be under the current pinch center
+        this.camera.scale = newScale;
+        this.camera.x = currentScreenX - this.input.pinchWorldX * newScale;
+        this.camera.y = currentScreenY - this.input.pinchWorldY * newScale;
+
+        this.input.touchCount = e.pointers.length;
+    }
+
+    /**
+     * Handle Hammer pinch end
+     */
+    onHammerPinchEnd(e) {
+        this.input.isPinching = false;
+        this.input.touchCount = e.pointers ? e.pointers.length : 0;
+    }
+
+    /**
+     * Handle Hammer tap - deselect pieces when tapping background
+     */
+    onHammerTap(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.center.x - rect.left;
+        const screenY = e.center.y - rect.top;
+        const worldPos = this.screenToWorld(screenX, screenY);
+
+        const piece = this.getPieceAt(worldPos.x, worldPos.y);
+        if (!piece) {
+            this.clearSelection();
+        }
+    }
+
+    /**
+     * Resize canvas to fill container
+     */
+    resizeCanvas() {
+        const container = this.canvas.parentElement;
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
     }
 
     /**
@@ -489,16 +440,6 @@ class PuzzleEngine {
 
         this.camera.x += (worldAfter.x - worldBefore.x);
         this.camera.y += (worldAfter.y - worldBefore.y);
-    }
-
-    /**
-     * Clear hold timer
-     */
-    clearHoldTimer() {
-        if (this.input.holdTimer) {
-            clearTimeout(this.input.holdTimer);
-            this.input.holdTimer = null;
-        }
     }
 
     /**

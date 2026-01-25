@@ -748,6 +748,11 @@ class PuzzleEngine {
                 this.selectedPieces.push(piece);
             }
         });
+
+        // Notify selection change for remote user visibility
+        if (this.selectedPieces.length > 0 && this.onSelectionChange) {
+            this.onSelectionChange(this.selectedPieces, false);
+        }
     }
 
     /**
@@ -784,6 +789,11 @@ class PuzzleEngine {
                 this.selectedPieces.push(piece);
             }
         });
+
+        // Notify selection change for remote user visibility
+        if (this.selectedPieces.length > 0 && this.onSelectionChange) {
+            this.onSelectionChange(this.selectedPieces, false);
+        }
     }
 
     /**

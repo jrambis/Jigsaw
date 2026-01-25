@@ -29,14 +29,9 @@ tmp/
 temp/
 *.tmp
 
-# Uploaded images (Phase 5)
-uploads/
+# Uploaded images
 images/uploaded/
 
-# Session/data files (Phase 3)
-data/*.json
-sessions/*.json
-
-# Keep directory structure
-!data/.gitkeep
-!sessions/.gitkeep
+# Session/data files
+data/
+logs/

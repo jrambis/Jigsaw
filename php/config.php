@@ -30,7 +30,7 @@ define('MAX_BACKUPS', 30);
 define('BACKUP_INTERVAL', 180); // 3 minutes in seconds
 
 // SSE settings
-define('SSE_POLL_INTERVAL', 250000); // microseconds (250ms)
+define('SSE_POLL_INTERVAL', 100000); // microseconds (100ms)
 define('SSE_TIMEOUT', 30); // seconds
 
 // Selection timeout for remote users

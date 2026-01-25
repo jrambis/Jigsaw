@@ -18,7 +18,7 @@ let saveTimeout = null;
 let selectionTimeout = null;
 let isApplyingRemoteUpdate = false;
 let lastDragBroadcast = 0;
-const DRAG_BROADCAST_INTERVAL = 100; // ms
+const DRAG_BROADCAST_INTERVAL = 50; // ms
 
 // User preferences (stored in localStorage + server)
 let userPrefs = {

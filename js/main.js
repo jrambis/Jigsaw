@@ -33,6 +33,11 @@ let userPrefs = {
 // Drawer state
 let drawerOpen = false;
 
+// Undo/Redo history
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO_STEPS = 50;
+
 // UI elements
 let canvas;
 let pieceCountSelect;
@@ -93,6 +98,7 @@ async function init() {
     puzzleEngine.onPieceMoveEnd = handlePieceMoveEnd;
     puzzleEngine.onSelectionChange = handleSelectionChange;
     puzzleEngine.onDragMove = handleDragMove;
+    puzzleEngine.onDragStart = handleDragStart;
 
     // Start render loop
     puzzleEngine.start();
@@ -139,6 +145,12 @@ function setupEventListeners() {
     if (referenceBtn) {
         referenceBtn.addEventListener('click', toggleReferenceImage);
     }
+
+    // Undo/Redo buttons
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) undoBtn.addEventListener('click', undo);
+    if (redoBtn) redoBtn.addEventListener('click', redo);
 
     // Image dropdown change - switch puzzles
     imageSelect.addEventListener('change', handleImageChange);
@@ -535,6 +547,7 @@ async function autoLoadPuzzle() {
             // Load existing puzzle state
             await restoreSharedPuzzle(result.data.puzzle);
             puzzleLoaded = true;
+            clearUndoHistory();
             startBtn.style.display = 'none';
             pieceCountGroup.style.display = 'none';
 
@@ -592,6 +605,9 @@ async function startNewPuzzle() {
         puzzleEngine.resetView();
 
         puzzleLoaded = true;
+
+        // Clear undo history for new puzzle
+        clearUndoHistory();
 
         // Hide start button and piece selector since puzzle is active
         startBtn.style.display = 'none';
@@ -720,6 +736,11 @@ function rebuildGroups(savedPieces) {
 function handlePieceMoveEnd(movedPieces) {
     if (!puzzleLoaded) return;
 
+    // Push to undo stack (if not applying a remote update)
+    if (!isApplyingRemoteUpdate) {
+        pushUndoState();
+    }
+
     // Debounce save
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
@@ -792,6 +813,170 @@ function setupPageUnloadHandlers() {
             clearUserSelection();
         }
     });
+}
+
+// ==================== Undo/Redo System ====================
+
+// Temporary storage for pre-drag positions
+let preDragState = null;
+
+/**
+ * Handle drag start - capture piece positions before move
+ * @param {Array} pieces - Pieces about to be dragged
+ */
+function handleDragStart(pieces) {
+    if (!puzzleLoaded || isApplyingRemoteUpdate) return;
+
+    // Capture positions of pieces before they move
+    preDragState = pieces.map(p => ({
+        id: p.id,
+        x: p.currentX,
+        y: p.currentY,
+        groupId: p.groupId
+    }));
+}
+
+/**
+ * Push current state to undo stack (called after move completes)
+ */
+function pushUndoState() {
+    if (!preDragState || preDragState.length === 0) return;
+
+    // Push the pre-drag positions to undo stack
+    undoStack.push({
+        type: 'move',
+        pieces: preDragState,
+        timestamp: Date.now()
+    });
+
+    // Limit stack size
+    while (undoStack.length > MAX_UNDO_STEPS) {
+        undoStack.shift();
+    }
+
+    // Clear redo stack when new action is performed
+    redoStack.length = 0;
+
+    // Clear pre-drag state
+    preDragState = null;
+
+    updateUndoRedoButtons();
+}
+
+/**
+ * Undo last action
+ */
+function undo() {
+    if (undoStack.length === 0) return;
+
+    const state = undoStack.pop();
+
+    // Capture current positions for redo
+    const currentPositions = state.pieces.map(savedPiece => {
+        const piece = puzzleEngine.pieces.find(p => p.id === savedPiece.id);
+        return piece ? {
+            id: piece.id,
+            x: piece.currentX,
+            y: piece.currentY,
+            groupId: piece.groupId
+        } : null;
+    }).filter(p => p !== null);
+
+    redoStack.push({
+        type: 'move',
+        pieces: currentPositions,
+        timestamp: Date.now()
+    });
+
+    // Apply the saved positions
+    applyPositionState(state.pieces);
+
+    updateUndoRedoButtons();
+}
+
+/**
+ * Redo last undone action
+ */
+function redo() {
+    if (redoStack.length === 0) return;
+
+    const state = redoStack.pop();
+
+    // Capture current positions for undo
+    const currentPositions = state.pieces.map(savedPiece => {
+        const piece = puzzleEngine.pieces.find(p => p.id === savedPiece.id);
+        return piece ? {
+            id: piece.id,
+            x: piece.currentX,
+            y: piece.currentY,
+            groupId: piece.groupId
+        } : null;
+    }).filter(p => p !== null);
+
+    undoStack.push({
+        type: 'move',
+        pieces: currentPositions,
+        timestamp: Date.now()
+    });
+
+    // Apply the saved positions
+    applyPositionState(state.pieces);
+
+    updateUndoRedoButtons();
+}
+
+/**
+ * Apply saved position state to pieces
+ * @param {Array} savedPieces - Array of {id, x, y, groupId}
+ */
+function applyPositionState(savedPieces) {
+    savedPieces.forEach(saved => {
+        const piece = puzzleEngine.pieces.find(p => p.id === saved.id);
+        if (piece) {
+            // Calculate delta from current position
+            const dx = saved.x - piece.currentX;
+            const dy = saved.y - piece.currentY;
+
+            // Move all pieces in the same group
+            const groupPieces = puzzleEngine.groups.get(piece.groupId);
+            if (groupPieces) {
+                groupPieces.forEach(pieceId => {
+                    const gp = puzzleEngine.pieces.find(p => p.id === pieceId);
+                    if (gp) {
+                        gp.currentX += dx;
+                        gp.currentY += dy;
+                    }
+                });
+            } else {
+                piece.currentX = saved.x;
+                piece.currentY = saved.y;
+            }
+        }
+    });
+
+    // Save the updated state
+    saveSharedPuzzle();
+}
+
+/**
+ * Update undo/redo button disabled states
+ */
+function updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+
+    if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+}
+
+/**
+ * Clear undo/redo history (called when starting new puzzle)
+ */
+function clearUndoHistory() {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    preDragState = null;
+    updateUndoRedoButtons();
 }
 
 /**

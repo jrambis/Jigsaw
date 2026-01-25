@@ -86,6 +86,7 @@ class PuzzleEngine {
         this.onPieceMoveEnd = null;      // Called after piece drag ends
         this.onSelectionChange = null;   // Called when selection changes
         this.onDragMove = null;          // Called during piece drag (throttled externally)
+        this.onDragStart = null;         // Called when piece drag starts (for undo)
 
         // Remote user selections (from other users)
         this.remoteSelections = {};  // userId -> { pieceIds: [], color: '#...', displayName: '...' }
@@ -600,6 +601,21 @@ class PuzzleEngine {
      * @param {number} y - World Y coordinate
      */
     activatePieceDrag(piece, x, y) {
+        // Notify drag start (for undo capture) - call before any state changes
+        if (this.onDragStart) {
+            // Get pieces that will be dragged (the group)
+            const groupPieceIds = this.groups.get(piece.groupId);
+            let piecesToDrag = [];
+            if (piece.isSelected) {
+                piecesToDrag = [...this.selectedPieces];
+            } else if (groupPieceIds) {
+                piecesToDrag = this.pieces.filter(p => groupPieceIds.has(p.id));
+            } else {
+                piecesToDrag = [piece];
+            }
+            this.onDragStart(piecesToDrag);
+        }
+
         this.input.isDragging = true;
         this.input.isPanning = false;
 

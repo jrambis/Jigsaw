@@ -547,6 +547,9 @@ async function startNewPuzzle() {
         // Set the source image for reference image feature
         puzzleEngine.setSourceImage(puzzleCutter.image);
 
+        // Center view on the puzzle
+        puzzleEngine.resetView();
+
         puzzleLoaded = true;
 
         // Hide start button and piece selector since puzzle is active
@@ -607,12 +610,8 @@ async function restoreSharedPuzzle(puzzleData) {
         // Rebuild groups
         rebuildGroups(puzzleData.pieces);
 
-        // Restore camera
-        if (puzzleData.camera) {
-            puzzleEngine.camera.x = puzzleData.camera.x;
-            puzzleEngine.camera.y = puzzleData.camera.y;
-            puzzleEngine.camera.scale = puzzleData.camera.scale;
-        }
+        // Center view on the puzzle (ignore saved camera position)
+        puzzleEngine.resetView();
 
         // Update stats
         puzzleEngine.stats.placedPieces = puzzleData.pieces.filter(p => p.isPlaced || p.isLocked).length;

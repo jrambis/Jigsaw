@@ -95,6 +95,15 @@ async function init() {
         populateImageDropdown()
     ]);
 
+    // Restore last puzzle from localStorage if available
+    const lastPuzzle = localStorage.getItem('lastPuzzle');
+    if (lastPuzzle) {
+        const exists = Array.from(imageSelect.options).some(opt => opt.value === lastPuzzle);
+        if (exists) {
+            imageSelect.value = lastPuzzle;
+        }
+    }
+
     // Set initial image path (needs dropdown populated)
     currentImagePath = imageSelect.value;
 
@@ -262,8 +271,9 @@ async function handleImageChange() {
     // Unsubscribe from current image
     puzzleAPI.unsubscribe();
 
-    // Update current image path
+    // Update current image path and save to localStorage
     currentImagePath = imageSelect.value;
+    localStorage.setItem('lastPuzzle', currentImagePath);
 
     // Load puzzle for new image
     await autoLoadPuzzle();
@@ -360,6 +370,7 @@ async function handleImageUpload(e) {
         // Select the newly uploaded image
         imageSelect.value = result.data.imagePath;
         currentImagePath = result.data.imagePath;
+        localStorage.setItem('lastPuzzle', currentImagePath);
 
         // Clear existing puzzle state and show start button
         puzzleEngine.setPieces([]);

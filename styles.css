@@ -4,6 +4,10 @@
     box-sizing: border-box;
 }
 
+html {
+    background: var(--html-bg, #ffffff); /* Fallback for safe areas */
+}
+
 /* Theme CSS Variables */
 :root {
     --bg-primary: rgba(255, 255, 255, 0.95);

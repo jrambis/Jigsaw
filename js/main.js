@@ -1429,10 +1429,12 @@ function applyTheme() {
 
     if (userPrefs.darkMode) {
         body.classList.add('dark-mode');
+        document.documentElement.style.setProperty('--html-bg', '#1e1e23');
         if (themeBtn) themeBtn.title = 'Switch to Light Mode';
         if (themeColorMeta) themeColorMeta.content = '#1e1e23'; // Dark mode - matches header
     } else {
         body.classList.remove('dark-mode');
+        document.documentElement.style.setProperty('--html-bg', '#ffffff');
         if (themeBtn) themeBtn.title = 'Switch to Dark Mode';
         if (themeColorMeta) themeColorMeta.content = '#ffffff'; // Light mode - matches header
     }

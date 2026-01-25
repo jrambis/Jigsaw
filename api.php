@@ -496,10 +496,14 @@ function uploadImage() {
     if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
         $errorMessage = 'No file uploaded';
         if (isset($_FILES['image']['error'])) {
+            $maxUpload = ini_get('upload_max_filesize');
+            $maxPost = ini_get('post_max_size');
             switch ($_FILES['image']['error']) {
                 case UPLOAD_ERR_INI_SIZE:
+                    $errorMessage = "File exceeds PHP limit (upload_max_filesize={$maxUpload}). Increase in php.ini.";
+                    break;
                 case UPLOAD_ERR_FORM_SIZE:
-                    $errorMessage = 'File too large';
+                    $errorMessage = "File exceeds form limit (post_max_size={$maxPost}). Increase in php.ini.";
                     break;
                 case UPLOAD_ERR_PARTIAL:
                     $errorMessage = 'Upload incomplete';

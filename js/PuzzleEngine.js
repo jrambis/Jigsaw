@@ -904,6 +904,7 @@ class PuzzleEngine {
                 // Snap this piece's entire group to align with neighbor
                 const offsetX = expectedX - piece.currentX;
                 const offsetY = expectedY - piece.currentY;
+
                 this.moveGroup(piece.groupId, offsetX, offsetY);
 
                 // Merge the groups
@@ -941,6 +942,7 @@ class PuzzleEngine {
 
         const piecesA = this.groups.get(groupA);
         const piecesB = this.groups.get(groupB);
+
         if (!piecesA || !piecesB) return;
 
         // Merge B into A
@@ -949,6 +951,13 @@ class PuzzleEngine {
             const piece = this.pieces.find(p => p.id === pieceId);
             if (piece) {
                 piece.groupId = groupA;
+
+                // Also add to selectedPieces if not already selected
+                // This ensures the entire merged group moves together on next drag
+                if (!piece.isSelected) {
+                    piece.isSelected = true;
+                    this.selectedPieces.push(piece);
+                }
             }
         });
 
@@ -1561,6 +1570,8 @@ class PuzzleEngine {
 
     /**
      * Arrange selected pieces in a grid layout
+     * Groups (connected pieces) stay together and are placed in top rows
+     * Single pieces are placed in bottom rows
      */
     gridSpaceSelectedPieces() {
         if (this.selectedPieces.length < 2) return;
@@ -1576,33 +1587,129 @@ class PuzzleEngine {
             maxPieceHeight = Math.max(maxPieceHeight, piece.height);
         });
 
-        // Calculate grid dimensions (roughly square)
-        const count = this.selectedPieces.length;
-        const cols = Math.ceil(Math.sqrt(count));
-        const rows = Math.ceil(count / cols);
+        // Group selected pieces by their groupId
+        const groupMap = new Map(); // groupId -> pieces in that group (that are selected)
+        this.selectedPieces.forEach(piece => {
+            if (!groupMap.has(piece.groupId)) {
+                groupMap.set(piece.groupId, []);
+            }
+            groupMap.get(piece.groupId).push(piece);
+        });
 
-        // Spacing = max piece dimension + small gap
-        const spacingX = maxPieceWidth + 10;
-        const spacingY = maxPieceHeight + 10;
+        // Separate multi-piece groups from singles
+        const multiGroups = []; // { pieces: [], bounds: { width, height, minX, minY } }
+        const singles = [];
 
-        // Shuffle pieces to randomize grid placement
-        const shuffledPieces = [...this.selectedPieces];
-        for (let i = shuffledPieces.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffledPieces[i], shuffledPieces[j]] = [shuffledPieces[j], shuffledPieces[i]];
+        groupMap.forEach((pieces, groupId) => {
+            // Get ALL pieces in this group (not just selected ones)
+            const allGroupPieceIds = this.groups.get(groupId);
+            if (allGroupPieceIds && allGroupPieceIds.size > 1) {
+                // This is a connected group - include ALL pieces from the group
+                const allPieces = [];
+                let gMinX = Infinity, gMinY = Infinity;
+                let gMaxX = -Infinity, gMaxY = -Infinity;
+
+                allGroupPieceIds.forEach(pieceId => {
+                    const p = this.pieces.find(pp => pp.id === pieceId);
+                    if (p) {
+                        allPieces.push(p);
+                        gMinX = Math.min(gMinX, p.currentX);
+                        gMinY = Math.min(gMinY, p.currentY);
+                        gMaxX = Math.max(gMaxX, p.currentX + p.width);
+                        gMaxY = Math.max(gMaxY, p.currentY + p.height);
+                    }
+                });
+
+                multiGroups.push({
+                    pieces: allPieces,
+                    bounds: {
+                        minX: gMinX,
+                        minY: gMinY,
+                        width: gMaxX - gMinX,
+                        height: gMaxY - gMinY
+                    }
+                });
+            } else {
+                // Single piece
+                singles.push(...pieces);
+            }
+        });
+
+        // Shuffle both arrays for randomized placement
+        this.shuffleArray(multiGroups);
+        this.shuffleArray(singles);
+
+        // Calculate spacing for singles grid
+        const singleSpacingX = maxPieceWidth + 10;
+        const singleSpacingY = maxPieceHeight + 10;
+
+        let currentY = minY;
+        const gap = 20; // Gap between rows
+
+        // Place multi-piece groups first (top layer)
+        if (multiGroups.length > 0) {
+            // Arrange groups in rows, fitting as many as possible per row
+            let rowX = minX;
+            let rowMaxHeight = 0;
+            const canvasWidth = this.canvas.width / this.camera.scale;
+
+            multiGroups.forEach(group => {
+                // Check if group fits in current row
+                if (rowX + group.bounds.width > minX + canvasWidth * 0.8 && rowX > minX) {
+                    // Start new row
+                    currentY += rowMaxHeight + gap;
+                    rowX = minX;
+                    rowMaxHeight = 0;
+                }
+
+                // Move all pieces in group, maintaining relative positions
+                const offsetX = rowX - group.bounds.minX;
+                const offsetY = currentY - group.bounds.minY;
+
+                group.pieces.forEach(piece => {
+                    piece.currentX += offsetX;
+                    piece.currentY += offsetY;
+
+                    // Add to selected pieces if not already
+                    if (!piece.isSelected) {
+                        piece.isSelected = true;
+                        this.selectedPieces.push(piece);
+                    }
+                });
+
+                rowX += group.bounds.width + gap;
+                rowMaxHeight = Math.max(rowMaxHeight, group.bounds.height);
+            });
+
+            // Move to next row for singles
+            currentY += rowMaxHeight + gap * 2;
         }
 
-        // Position each piece in grid (randomized order)
-        shuffledPieces.forEach((piece, index) => {
-            const col = index % cols;
-            const row = Math.floor(index / cols);
-            piece.currentX = minX + col * spacingX;
-            piece.currentY = minY + row * spacingY;
-        });
+        // Place singles in grid (bottom layer)
+        if (singles.length > 0) {
+            const singlesCols = Math.ceil(Math.sqrt(singles.length));
+
+            singles.forEach((piece, index) => {
+                const col = index % singlesCols;
+                const row = Math.floor(index / singlesCols);
+                piece.currentX = minX + col * singleSpacingX;
+                piece.currentY = currentY + row * singleSpacingY;
+            });
+        }
 
         // Trigger auto-save callback
         if (this.onPieceMoveEnd) {
             this.onPieceMoveEnd(this.selectedPieces, false);
+        }
+    }
+
+    /**
+     * Shuffle array in place (Fisher-Yates)
+     */
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
         }
     }
 

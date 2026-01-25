@@ -325,16 +325,10 @@ async function handleImageUpload(e) {
     e.target.value = '';
 
     // Client-side validation
-    const maxSize = 10 * 1024 * 1024; // 10MB
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     if (!allowedTypes.includes(file.type)) {
         showMessage('Invalid file type. Please use JPEG, PNG, GIF, or WebP.');
-        return;
-    }
-
-    if (file.size > maxSize) {
-        showMessage('File too large. Maximum size is 10MB.');
         return;
     }
 
@@ -347,11 +341,16 @@ async function handleImageUpload(e) {
         return;
     }
 
-    // Show loading overlay with progress
-    showLoadingOverlay('Uploading image... 0%');
+    // Show loading overlay
+    showLoadingOverlay('Processing image...');
 
     try {
-        const result = await puzzleAPI.uploadImage(file, displayName.trim(), (percent) => {
+        // Process image (resize/compress if needed)
+        const processedFile = await processImageForUpload(file);
+
+        showLoadingOverlay('Uploading image... 0%');
+
+        const result = await puzzleAPI.uploadImage(processedFile, displayName.trim(), (percent) => {
             showLoadingOverlay(`Uploading image... ${percent}%`);
         });
 
@@ -374,8 +373,111 @@ async function handleImageUpload(e) {
     } catch (error) {
         hideLoadingOverlay();
         console.error('Upload failed:', error);
-        showMessage('Upload failed: ' + error.message);
+
+        // Provide helpful message for PHP config issues
+        let message = error.message;
+        if (message.includes('php.ini') || message.includes('PHP limit')) {
+            message += ' Run server with: php -S localhost:8000 -c php.ini';
+        }
+        showMessage('Upload failed: ' + message);
     }
+}
+
+/**
+ * Process image for upload - resize and compress if needed
+ * @param {File} file - Original image file
+ * @returns {Promise<File|Blob>} Processed image
+ */
+async function processImageForUpload(file) {
+    const maxDimension = 4096;
+    // Target 1.8MB to work with PHP's common 2M default limit
+    const targetFileSize = 1.8 * 1024 * 1024;
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = async () => {
+            URL.revokeObjectURL(img.src);
+
+            const needsResize = img.width > maxDimension || img.height > maxDimension;
+            const needsCompress = file.size > targetFileSize;
+
+            // If image is fine as-is, return original
+            if (!needsResize && !needsCompress) {
+                console.log(`Image OK (${(file.size / 1024 / 1024).toFixed(2)}MB), no processing needed`);
+                resolve(file);
+                return;
+            }
+
+            console.log(`Processing image: ${(file.size / 1024 / 1024).toFixed(2)}MB, ${img.width}x${img.height}`);
+
+            // Calculate new dimensions
+            let newWidth = img.width;
+            let newHeight = img.height;
+
+            if (needsResize) {
+                const scale = maxDimension / Math.max(img.width, img.height);
+                newWidth = Math.round(img.width * scale);
+                newHeight = Math.round(img.height * scale);
+                console.log(`Resizing image from ${img.width}x${img.height} to ${newWidth}x${newHeight}`);
+            }
+
+            // Draw to canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+            // Compress with decreasing quality until size is acceptable
+            let quality = 0.92;
+            let blob = null;
+
+            // Try JPEG first (better compression for photos)
+            const outputType = 'image/jpeg';
+
+            while (quality > 0.1) {
+                blob = await new Promise(res => canvas.toBlob(res, outputType, quality));
+
+                if (blob.size <= targetFileSize) {
+                    console.log(`Compressed to ${(blob.size / 1024 / 1024).toFixed(2)}MB at quality ${quality.toFixed(2)}`);
+                    break;
+                }
+
+                quality -= 0.1;
+            }
+
+            if (!blob || blob.size > targetFileSize) {
+                // Last resort: reduce dimensions further
+                const furtherScale = Math.sqrt(targetFileSize / blob.size);
+                newWidth = Math.round(newWidth * furtherScale);
+                newHeight = Math.round(newHeight * furtherScale);
+
+                console.log(`Further resizing to ${newWidth}x${newHeight}`);
+
+                canvas.width = newWidth;
+                canvas.height = newHeight;
+                ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+                blob = await new Promise(res => canvas.toBlob(res, outputType, 0.80));
+                console.log(`Final size: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+            }
+
+            // Convert blob to File to preserve filename
+            const processedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
+                type: outputType,
+                lastModified: Date.now()
+            });
+
+            resolve(processedFile);
+        };
+
+        img.onerror = () => {
+            URL.revokeObjectURL(img.src);
+            reject(new Error('Failed to load image'));
+        };
+
+        img.src = URL.createObjectURL(file);
+    });
 }
 
 /**

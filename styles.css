@@ -54,8 +54,7 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: var(--text-primary);
     overflow: hidden;
-    height: 100vh;
-    height: 100dvh; /* iOS Safari - accounts for browser chrome */
+    height: 100vh; /* Full viewport including safe areas with viewport-fit=cover */
     touch-action: none;
 }
 
@@ -63,15 +62,14 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    height: 100dvh; /* iOS Safari - accounts for browser chrome */
 }
 
 /* Slim Header */
 #header {
     display: flex;
     align-items: center;
-    height: 44px;
-    padding: 0 12px;
+    height: calc(44px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 12px 0 12px;
     background: var(--bg-primary);
     box-shadow: 0 2px 8px var(--shadow);
     z-index: 100;
@@ -221,7 +219,7 @@ body {
 /* Floating Tool Palette */
 .tool-palette {
     position: fixed;
-    bottom: 80px;
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
     right: 20px;
     display: flex;
     flex-direction: column;
@@ -372,7 +370,7 @@ button.active {
     }
 
     .tool-palette {
-        bottom: 20px;
+        bottom: calc(20px + env(safe-area-inset-bottom, 0px));
         right: 10px;
     }
 

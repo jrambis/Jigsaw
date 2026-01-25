@@ -1,0 +1,8 @@
+# Allow access to uploaded images only
+Order deny,allow
+Deny from all
+
+# Allow image files
+<FilesMatch "\.(jpg|jpeg|png|gif|webp)$">
+    Allow from all
+</FilesMatch>

@@ -76,10 +76,7 @@ async function init() {
     puzzleEngine = new PuzzleEngine(canvas);
     puzzleAPI = new PuzzleAPI();
 
-    // Load user preferences
-    await loadUserPrefs();
-
-    // Setup UI event listeners
+    // Setup UI event listeners (doesn't need API data)
     setupEventListeners();
 
     // Wire up piece move callback for auto-save
@@ -92,10 +89,13 @@ async function init() {
     // Update stats regularly
     setInterval(updateStats, 100);
 
-    // Populate image dropdown from server
-    await populateImageDropdown();
+    // Load user prefs and image list in parallel (independent requests)
+    await Promise.all([
+        loadUserPrefs(),
+        populateImageDropdown()
+    ]);
 
-    // Set initial image path
+    // Set initial image path (needs dropdown populated)
     currentImagePath = imageSelect.value;
 
     // Auto-load existing puzzle for this image

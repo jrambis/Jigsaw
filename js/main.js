@@ -261,7 +261,7 @@ function toggleReferenceImage() {
 
     // Save state after toggle
     if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => saveSharedPuzzle(), 500);
+    saveTimeout = setTimeout(() => saveSharedPuzzle(), 250);
 }
 
 /**
@@ -694,7 +694,7 @@ function handlePieceMoveEnd(movedPieces) {
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
         saveSharedPuzzle();
-    }, 500);
+    }, 250);
 }
 
 /**

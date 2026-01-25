@@ -87,6 +87,7 @@ async function init() {
     setupEventListeners();
     setupDrawer();
     setupToolPalette();
+    setupPageUnloadHandlers();
 
     // Wire up piece move callback for auto-save
     puzzleEngine.onPieceMoveEnd = handlePieceMoveEnd;
@@ -746,6 +747,51 @@ function handleSelectionChange(selectedPieces, referenceSelected = false) {
             referenceSelected
         ).catch(e => console.error('Selection broadcast failed:', e));
     }, 100);
+}
+
+/**
+ * Clear user's selection from server (for page unload)
+ * Uses sendBeacon for reliable delivery during unload
+ */
+function clearUserSelection() {
+    if (!currentImagePath) return;
+
+    const payload = JSON.stringify({
+        image: currentImagePath,
+        pieceIds: [],  // Empty array clears selection
+        color: userPrefs.color,
+        displayName: userPrefs.displayName
+    });
+
+    // Use sendBeacon for reliable delivery during page unload
+    const url = new URL('./api.php', window.location.origin);
+    url.searchParams.set('action', 'updateSelection');
+
+    if (navigator.sendBeacon) {
+        navigator.sendBeacon(url.toString(), payload);
+    } else {
+        // Fallback for older browsers
+        fetch(url.toString(), {
+            method: 'POST',
+            body: payload,
+            keepalive: true
+        }).catch(() => {}); // Ignore errors on unload
+    }
+}
+
+/**
+ * Setup page unload cleanup handlers
+ */
+function setupPageUnloadHandlers() {
+    // Clear selection when leaving page
+    window.addEventListener('beforeunload', clearUserSelection);
+
+    // Also clear when tab becomes hidden (user might be leaving)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            clearUserSelection();
+        }
+    });
 }
 
 /**

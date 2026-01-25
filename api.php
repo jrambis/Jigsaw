@@ -408,6 +408,10 @@ function subscribeToUpdates() {
     echo "data: {\"userId\": \"$userId\", \"image\": \"$imageName\"}\n\n";
     flush();
 
+    // Track last cleanup time
+    $lastCleanup = 0;
+    $cleanupInterval = 5; // Clean up stale selections every 5 seconds
+
     // Poll for changes until timeout
     while (time() - $startTime < SSE_TIMEOUT) {
         if (connection_aborted()) break;
@@ -415,12 +419,45 @@ function subscribeToUpdates() {
         clearstatcache(true, $statePath);
         $currentMtime = file_exists($statePath) ? filemtime($statePath) : 0;
 
+        // Periodically clean up stale selections
+        $now = time();
+        if ($now - $lastCleanup >= $cleanupInterval) {
+            $lastCleanup = $now;
+
+            $state = safeReadJson($statePath);
+            if ($state && isset($state['selections'])) {
+                $cleaned = false;
+                foreach ($state['selections'] as $uid => $selection) {
+                    if (isset($selection['timestamp']) && ($now - $selection['timestamp']) > SELECTION_TIMEOUT) {
+                        unset($state['selections'][$uid]);
+                        $cleaned = true;
+                    }
+                }
+                // Save if we cleaned anything
+                if ($cleaned) {
+                    safeWriteJson($statePath, $state);
+                    // Force mtime update detection
+                    clearstatcache(true, $statePath);
+                    $currentMtime = filemtime($statePath);
+                }
+            }
+        }
+
         if ($currentMtime > $lastMtime) {
             $lastMtime = $currentMtime;
 
             // Read and send updated state
             $state = safeReadJson($statePath);
             if ($state) {
+                // Clean stale selections from the response (even if not persisted yet)
+                if (isset($state['selections'])) {
+                    foreach ($state['selections'] as $uid => $selection) {
+                        if (isset($selection['timestamp']) && ($now - $selection['timestamp']) > SELECTION_TIMEOUT) {
+                            unset($state['selections'][$uid]);
+                        }
+                    }
+                }
+
                 // Don't send the requesting user's own selection back
                 if (isset($state['selections'][$userId])) {
                     unset($state['selections'][$userId]);

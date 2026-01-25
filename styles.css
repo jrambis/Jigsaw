@@ -224,7 +224,7 @@ body {
     box-shadow: 0 4px 20px var(--shadow-strong);
     padding: 4px;
     z-index: 100;
-    opacity: 0.4;
+    opacity: 0.75;
     transition: opacity 0.2s, background 0.3s;
     touch-action: none;
 }

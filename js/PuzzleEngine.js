@@ -8,6 +8,7 @@ class PuzzleEngine {
         this.ctx = canvas.getContext('2d');
         this.pieces = [];
         this.selectedPieces = [];
+        this.userColor = '#667eea';  // User's selection color
 
         // Camera/viewport
         this.camera = {
@@ -1122,7 +1123,7 @@ class PuzzleEngine {
 
         // Draw outline - selection color if selected, subtle contrast color otherwise
         if (piece.isSelected) {
-            this.ctx.strokeStyle = '#667eea';
+            this.ctx.strokeStyle = this.userColor;
             this.ctx.lineWidth = 3 / this.camera.scale;
         } else if (!piece.isLocked) {
             // Thin outline for unselected, unlocked pieces
@@ -1489,6 +1490,14 @@ class PuzzleEngine {
     }
 
     /**
+     * Set user's selection color
+     * @param {string} color - CSS color value
+     */
+    setUserColor(color) {
+        this.userColor = color || '#667eea';
+    }
+
+    /**
      * Set the source image for reference image display
      * @param {HTMLImageElement} img - The loaded image
      */
@@ -1518,7 +1527,7 @@ class PuzzleEngine {
         // Draw selection highlight if selected
         if (ref.isSelected) {
             // Local selection - solid rectangle in user's color
-            this.ctx.strokeStyle = '#667eea';
+            this.ctx.strokeStyle = this.userColor;
             this.ctx.lineWidth = 3 / this.camera.scale;
             this.ctx.strokeRect(ref.x, ref.y, ref.width, ref.height);
         }

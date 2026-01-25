@@ -25,8 +25,13 @@ let userPrefs = {
     userId: null,
     displayName: 'Player',
     color: '#667eea',
-    canvasColor: '#f0f0f0'
+    canvasColorLight: '#f0f0f0',
+    canvasColorDark: '#2a2a2a',
+    darkMode: false
 };
+
+// Drawer state
+let drawerOpen = false;
 
 // UI elements
 let canvas;
@@ -80,6 +85,8 @@ async function init() {
 
     // Setup UI event listeners (doesn't need API data)
     setupEventListeners();
+    setupDrawer();
+    setupToolPalette();
 
     // Wire up piece move callback for auto-save
     puzzleEngine.onPieceMoveEnd = handlePieceMoveEnd;
@@ -109,6 +116,9 @@ async function init() {
 
     // Set initial image path (needs dropdown populated)
     currentImagePath = imageSelect.value;
+
+    // Update puzzle name display
+    updatePuzzleName();
 
     // Auto-load existing puzzle for this image
     await autoLoadPuzzle();
@@ -143,17 +153,29 @@ function setupEventListeners() {
         settingsBtn.addEventListener('click', openSettingsModal);
     }
 
+    // Theme toggle button
+    const themeBtn = document.getElementById('themeBtn');
+    if (themeBtn) {
+        themeBtn.addEventListener('click', toggleTheme);
+    }
+
     // Settings modal close
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     if (closeSettingsBtn) {
         closeSettingsBtn.addEventListener('click', closeSettingsModal);
     }
 
-    // Save settings button
-    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-    if (saveSettingsBtn) {
-        saveSettingsBtn.addEventListener('click', saveSettings);
-    }
+    // Auto-save settings on change
+    const settingsInputs = ['userNameInput', 'userColorInput', 'canvasColorLight', 'canvasColorDark'];
+    settingsInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('change', autoSaveSettings);
+            if (input.type === 'text') {
+                input.addEventListener('blur', autoSaveSettings);
+            }
+        }
+    });
 
     // Reset puzzle button
     const resetPuzzleBtn = document.getElementById('resetPuzzleBtn');
@@ -181,15 +203,6 @@ function setupEventListeners() {
             }
         });
     });
-
-    // Instructions toggle
-    const instructionsToggle = document.getElementById('instructionsToggle');
-    const instructions = document.getElementById('instructions');
-    if (instructionsToggle && instructions) {
-        instructionsToggle.addEventListener('click', () => {
-            instructions.classList.toggle('collapsed');
-        });
-    }
 }
 
 /**
@@ -200,7 +213,14 @@ async function loadUserPrefs() {
     const stored = localStorage.getItem('puzzleUserPrefs');
     if (stored) {
         try {
-            userPrefs = JSON.parse(stored);
+            const parsed = JSON.parse(stored);
+            // Migrate old canvasColor to new format
+            if (parsed.canvasColor && !parsed.canvasColorLight) {
+                parsed.canvasColorLight = parsed.canvasColor;
+                parsed.canvasColorDark = '#2a2a2a';
+                delete parsed.canvasColor;
+            }
+            userPrefs = { ...userPrefs, ...parsed };
         } catch (e) {
             console.error('Failed to parse stored prefs:', e);
         }
@@ -221,18 +241,15 @@ async function loadUserPrefs() {
         console.error('Failed to load server prefs:', e);
     }
 
-    // Update settings form if present
-    const nameInput = document.getElementById('userNameInput');
-    const colorInput = document.getElementById('userColorInput');
-    const canvasColorInput = document.getElementById('canvasColorInput');
-    if (nameInput) nameInput.value = userPrefs.displayName;
-    if (colorInput) colorInput.value = userPrefs.color;
-    if (canvasColorInput) canvasColorInput.value = userPrefs.canvasColor;
+    // Apply theme immediately
+    applyTheme();
 
-    // Apply canvas color to engine
-    if (puzzleEngine && userPrefs.canvasColor) {
-        puzzleEngine.setBackgroundColor(userPrefs.canvasColor);
-    }
+    // Update settings form if present
+    updateSettingsForm();
+
+    // Apply canvas color and user color to engine
+    applyCanvasColor();
+    applyUserColor();
 }
 
 /**
@@ -277,6 +294,12 @@ async function handleImageChange() {
     // Update current image path and save to localStorage
     currentImagePath = imageSelect.value;
     localStorage.setItem('lastPuzzle', currentImagePath);
+
+    // Update puzzle name display
+    updatePuzzleName();
+
+    // Close drawer when changing images
+    closeDrawer();
 
     // Load puzzle for new image
     await autoLoadPuzzle();
@@ -540,6 +563,9 @@ async function autoLoadPuzzle() {
  */
 async function startNewPuzzle() {
     const pieceCount = parseInt(pieceCountSelect.value);
+
+    // Close drawer when starting puzzle
+    closeDrawer();
 
     showMessage('Creating puzzle...');
     startBtn.disabled = true;
@@ -900,10 +926,7 @@ function openSettingsModal() {
     if (!settingsModal) return;
 
     // Update form values
-    const nameInput = document.getElementById('userNameInput');
-    const colorInput = document.getElementById('userColorInput');
-    if (nameInput) nameInput.value = userPrefs.displayName;
-    if (colorInput) colorInput.value = userPrefs.color;
+    updateSettingsForm();
 
     settingsModal.classList.add('active');
 
@@ -1009,25 +1032,24 @@ function closeSettingsModal() {
 }
 
 /**
- * Save settings from modal
+ * Auto-save settings when any input changes
  */
-async function saveSettings() {
+async function autoSaveSettings() {
     const nameInput = document.getElementById('userNameInput');
     const colorInput = document.getElementById('userColorInput');
-    const canvasColorInput = document.getElementById('canvasColorInput');
+    const canvasColorLightInput = document.getElementById('canvasColorLight');
+    const canvasColorDarkInput = document.getElementById('canvasColorDark');
 
     if (nameInput) userPrefs.displayName = nameInput.value || 'Player';
     if (colorInput) userPrefs.color = colorInput.value || '#667eea';
-    if (canvasColorInput) userPrefs.canvasColor = canvasColorInput.value || '#f0f0f0';
+    if (canvasColorLightInput) userPrefs.canvasColorLight = canvasColorLightInput.value || '#f0f0f0';
+    if (canvasColorDarkInput) userPrefs.canvasColorDark = canvasColorDarkInput.value || '#2a2a2a';
 
-    // Apply canvas color immediately
-    if (puzzleEngine && userPrefs.canvasColor) {
-        puzzleEngine.setBackgroundColor(userPrefs.canvasColor);
-    }
+    // Apply colors immediately
+    applyCanvasColor();
+    applyUserColor();
 
     await saveUserPrefs();
-    closeSettingsModal();
-    showMessage('Settings saved!');
 }
 
 /**
@@ -1156,7 +1178,7 @@ function updateStats() {
     if (!puzzleEngine) return;
 
     const progress = puzzleEngine.getProgress();
-    progressText.textContent = `${progress}% Complete`;
+    progressText.textContent = `${progress}%`;
 
     // Check for completion
     if (progress === 100 && puzzleEngine.stats.totalPieces > 0) {
@@ -1212,6 +1234,191 @@ function showCompletionMessage() {
     if (puzzleEngine.completionShown) return;
     puzzleEngine.completionShown = true;
     alert('Congratulations! Puzzle completed!');
+}
+
+/**
+ * Setup slide-out drawer
+ */
+function setupDrawer() {
+    const menuBtn = document.getElementById('menuBtn');
+    const overlay = document.getElementById('drawerOverlay');
+
+    if (menuBtn) {
+        menuBtn.addEventListener('click', toggleDrawer);
+    }
+    if (overlay) {
+        overlay.addEventListener('click', closeDrawer);
+    }
+}
+
+/**
+ * Toggle drawer open/closed
+ */
+function toggleDrawer() {
+    drawerOpen = !drawerOpen;
+    document.getElementById('drawer').classList.toggle('open', drawerOpen);
+    document.getElementById('drawerOverlay').classList.toggle('open', drawerOpen);
+}
+
+/**
+ * Close drawer
+ */
+function closeDrawer() {
+    drawerOpen = false;
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('drawerOverlay').classList.remove('open');
+}
+
+/**
+ * Setup draggable tool palette
+ */
+function setupToolPalette() {
+    const palette = document.getElementById('toolPalette');
+    const handle = document.getElementById('toolPaletteHandle');
+
+    if (!palette || !handle) return;
+
+    // Restore saved position
+    const savedPos = localStorage.getItem('toolPalettePosition');
+    if (savedPos) {
+        const { x, y } = JSON.parse(savedPos);
+        palette.style.right = 'auto';
+        palette.style.bottom = 'auto';
+        palette.style.left = `${x}px`;
+        palette.style.top = `${y}px`;
+        constrainToViewport(palette);
+    }
+
+    // Drag state
+    let isDragging = false;
+    let startX, startY, startLeft, startTop;
+
+    handle.addEventListener('pointerdown', (e) => {
+        isDragging = true;
+        palette.classList.add('dragging');
+        handle.setPointerCapture(e.pointerId);
+
+        const rect = palette.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+
+        // Switch from right/bottom to left/top positioning
+        palette.style.right = 'auto';
+        palette.style.bottom = 'auto';
+        palette.style.left = `${startLeft}px`;
+        palette.style.top = `${startTop}px`;
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        palette.style.left = `${startLeft + dx}px`;
+        palette.style.top = `${startTop + dy}px`;
+    });
+
+    handle.addEventListener('pointerup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        palette.classList.remove('dragging');
+        handle.releasePointerCapture(e.pointerId);
+
+        constrainToViewport(palette);
+
+        // Save position
+        const rect = palette.getBoundingClientRect();
+        localStorage.setItem('toolPalettePosition', JSON.stringify({
+            x: rect.left,
+            y: rect.top
+        }));
+    });
+}
+
+/**
+ * Constrain element to viewport
+ */
+function constrainToViewport(el) {
+    const rect = el.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width - 10;
+    const maxY = window.innerHeight - rect.height - 10;
+
+    let x = Math.max(10, Math.min(rect.left, maxX));
+    let y = Math.max(50, Math.min(rect.top, maxY)); // 50 = below header
+
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+}
+
+/**
+ * Update puzzle name display
+ */
+function updatePuzzleName() {
+    const nameEl = document.getElementById('puzzleName');
+    if (!nameEl || !imageSelect) return;
+    const selectedOption = imageSelect.options[imageSelect.selectedIndex];
+    nameEl.textContent = selectedOption ? selectedOption.textContent : 'Multiplayer Puzzle';
+}
+
+/**
+ * Toggle between light and dark theme
+ */
+function toggleTheme() {
+    userPrefs.darkMode = !userPrefs.darkMode;
+    applyTheme();
+    applyCanvasColor();
+    saveUserPrefs();
+}
+
+/**
+ * Apply current theme to UI
+ */
+function applyTheme() {
+    const body = document.body;
+    const themeBtn = document.getElementById('themeBtn');
+
+    if (userPrefs.darkMode) {
+        body.classList.add('dark-mode');
+        if (themeBtn) themeBtn.title = 'Switch to Light Mode';
+    } else {
+        body.classList.remove('dark-mode');
+        if (themeBtn) themeBtn.title = 'Switch to Dark Mode';
+    }
+}
+
+/**
+ * Apply correct canvas color based on theme
+ */
+function applyCanvasColor() {
+    if (!puzzleEngine) return;
+    const color = userPrefs.darkMode ? userPrefs.canvasColorDark : userPrefs.canvasColorLight;
+    puzzleEngine.setBackgroundColor(color);
+}
+
+/**
+ * Apply user's selection color to puzzle engine
+ */
+function applyUserColor() {
+    if (!puzzleEngine) return;
+    puzzleEngine.setUserColor(userPrefs.color);
+}
+
+/**
+ * Update settings form with current preferences
+ */
+function updateSettingsForm() {
+    const nameInput = document.getElementById('userNameInput');
+    const colorInput = document.getElementById('userColorInput');
+    const canvasColorLightInput = document.getElementById('canvasColorLight');
+    const canvasColorDarkInput = document.getElementById('canvasColorDark');
+
+    if (nameInput) nameInput.value = userPrefs.displayName;
+    if (colorInput) colorInput.value = userPrefs.color;
+    if (canvasColorLightInput) canvasColorLightInput.value = userPrefs.canvasColorLight;
+    if (canvasColorDarkInput) canvasColorDarkInput.value = userPrefs.canvasColorDark;
 }
 
 // Initialize when DOM is ready

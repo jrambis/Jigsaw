@@ -185,6 +185,14 @@ class PuzzleEngine {
                 }
             });
         }
+
+        // Setup grid button
+        const gridBtn = document.getElementById('gridBtn');
+        if (gridBtn) {
+            gridBtn.addEventListener('click', () => {
+                this.gridSpaceSelectedPieces();
+            });
+        }
     }
 
     /**
@@ -852,7 +860,6 @@ class PuzzleEngine {
                 piece.currentX = piece.correctX;
                 piece.currentY = piece.correctY;
                 piece.isLocked = true;
-                piece.isSelected = false;
 
                 if (!piece.isPlaced) {
                     piece.isPlaced = true;
@@ -861,7 +868,10 @@ class PuzzleEngine {
             }
         });
 
-        // Clear selection since pieces are now locked
+        // Clear isSelected on ALL selected pieces before clearing the array
+        this.selectedPieces.forEach(piece => {
+            piece.isSelected = false;
+        });
         this.selectedPieces = [];
     }
 
@@ -1054,6 +1064,24 @@ class PuzzleEngine {
     }
 
     /**
+     * Get outline color that contrasts with the background
+     * @returns {string} CSS color for outline
+     */
+    getContrastingOutlineColor() {
+        // Parse background color to RGB
+        const hex = this.backgroundColor.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+
+        // Calculate luminance (perceived brightness)
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+        // Return dark color on light background, light on dark
+        return luminance > 0.5 ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.75)';
+    }
+
+    /**
      * Draw a puzzle piece
      * @param {Object} piece - Piece to draw
      */
@@ -1067,14 +1095,20 @@ class PuzzleEngine {
             piece.currentY
         );
 
-        // Highlight if selected - draw outline following piece shape
+        // Draw outline - selection color if selected, subtle contrast color otherwise
         if (piece.isSelected) {
             this.ctx.strokeStyle = '#667eea';
             this.ctx.lineWidth = 3 / this.camera.scale;
-            this.drawPieceOutline(piece);
+        } else if (!piece.isLocked) {
+            // Thin outline for unselected, unlocked pieces
+            this.ctx.strokeStyle = this.getContrastingOutlineColor();
+            this.ctx.lineWidth = 1 / this.camera.scale;
         }
 
-        // Locked pieces don't need any special outline - they're in final position
+        // Draw outline for selected or unlocked pieces
+        if (piece.isSelected || !piece.isLocked) {
+            this.drawPieceOutline(piece);
+        }
 
         this.ctx.restore();
     }
@@ -1523,6 +1557,53 @@ class PuzzleEngine {
     moveReferenceImage(dx, dy) {
         this.referenceImage.x += dx;
         this.referenceImage.y += dy;
+    }
+
+    /**
+     * Arrange selected pieces in a grid layout
+     */
+    gridSpaceSelectedPieces() {
+        if (this.selectedPieces.length < 2) return;
+
+        // Find top-left corner of current selection
+        let minX = Infinity, minY = Infinity;
+        let maxPieceWidth = 0, maxPieceHeight = 0;
+
+        this.selectedPieces.forEach(piece => {
+            minX = Math.min(minX, piece.currentX);
+            minY = Math.min(minY, piece.currentY);
+            maxPieceWidth = Math.max(maxPieceWidth, piece.width);
+            maxPieceHeight = Math.max(maxPieceHeight, piece.height);
+        });
+
+        // Calculate grid dimensions (roughly square)
+        const count = this.selectedPieces.length;
+        const cols = Math.ceil(Math.sqrt(count));
+        const rows = Math.ceil(count / cols);
+
+        // Spacing = max piece dimension + small gap
+        const spacingX = maxPieceWidth + 10;
+        const spacingY = maxPieceHeight + 10;
+
+        // Shuffle pieces to randomize grid placement
+        const shuffledPieces = [...this.selectedPieces];
+        for (let i = shuffledPieces.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledPieces[i], shuffledPieces[j]] = [shuffledPieces[j], shuffledPieces[i]];
+        }
+
+        // Position each piece in grid (randomized order)
+        shuffledPieces.forEach((piece, index) => {
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+            piece.currentX = minX + col * spacingX;
+            piece.currentY = minY + row * spacingY;
+        });
+
+        // Trigger auto-save callback
+        if (this.onPieceMoveEnd) {
+            this.onPieceMoveEnd(this.selectedPieces, false);
+        }
     }
 
     /**

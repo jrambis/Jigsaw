@@ -84,6 +84,7 @@ class PuzzleEngine {
         // Callbacks for multiuser sync
         this.onPieceMoveEnd = null;      // Called after piece drag ends
         this.onSelectionChange = null;   // Called when selection changes
+        this.onDragMove = null;          // Called during piece drag (throttled externally)
 
         // Remote user selections (from other users)
         this.remoteSelections = {};  // userId -> { pieceIds: [], color: '#...', displayName: '...' }
@@ -390,6 +391,11 @@ class PuzzleEngine {
 
             // Edge panning
             this.updateEdgePanning(screenX, screenY);
+
+            // Fire drag move callback for real-time sync
+            if (this.onDragMove) {
+                this.onDragMove(this.selectedPieces);
+            }
 
         } else if (this.input.isSelecting) {
             // Selection box just updates currentX/currentY (already done above)
@@ -1199,6 +1205,23 @@ class PuzzleEngine {
      */
     setRemoteSelections(selections) {
         this.remoteSelections = selections || {};
+    }
+
+    /**
+     * Apply remote positions during drag (for real-time sync)
+     * @param {Object} positions - Map of pieceId -> {x, y}
+     * @param {Set} localSelectedIds - IDs of locally selected pieces (skip these)
+     */
+    applyRemotePositions(positions, localSelectedIds) {
+        if (!positions) return;
+        for (const [pieceId, pos] of Object.entries(positions)) {
+            if (localSelectedIds.has(parseInt(pieceId))) continue;
+            const piece = this.pieces.find(p => p.id === parseInt(pieceId));
+            if (piece) {
+                piece.currentX = pos.x;
+                piece.currentY = pos.y;
+            }
+        }
     }
 
     /**

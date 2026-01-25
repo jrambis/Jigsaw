@@ -17,6 +17,8 @@ let puzzleLoaded = false;
 let saveTimeout = null;
 let selectionTimeout = null;
 let isApplyingRemoteUpdate = false;
+let lastDragBroadcast = 0;
+const DRAG_BROADCAST_INTERVAL = 100; // ms
 
 // User preferences (stored in localStorage + server)
 let userPrefs = {
@@ -82,6 +84,7 @@ async function init() {
     // Wire up piece move callback for auto-save
     puzzleEngine.onPieceMoveEnd = handlePieceMoveEnd;
     puzzleEngine.onSelectionChange = handleSelectionChange;
+    puzzleEngine.onDragMove = handleDragMove;
 
     // Start render loop
     puzzleEngine.start();
@@ -720,6 +723,33 @@ function handleSelectionChange(selectedPieces, referenceSelected = false) {
 }
 
 /**
+ * Handle drag move - broadcast piece positions in real-time (throttled)
+ * @param {Array} movedPieces - Array of pieces being dragged
+ */
+function handleDragMove(movedPieces) {
+    if (!puzzleLoaded || !currentImagePath) return;
+    if (movedPieces.length === 0) return;
+
+    const now = Date.now();
+    if (now - lastDragBroadcast < DRAG_BROADCAST_INTERVAL) return;
+    lastDragBroadcast = now;
+
+    const positions = {};
+    movedPieces.forEach(piece => {
+        positions[piece.id] = { x: piece.currentX, y: piece.currentY };
+    });
+
+    puzzleAPI.updateSelection(
+        currentImagePath,
+        movedPieces.map(p => p.id),
+        userPrefs.color,
+        userPrefs.displayName,
+        puzzleEngine.referenceImage.isSelected,
+        positions
+    ).catch(e => console.error('Drag broadcast failed:', e));
+}
+
+/**
  * Save shared puzzle state
  */
 async function saveSharedPuzzle() {
@@ -834,6 +864,13 @@ function handleRemotePuzzleUpdate(data) {
         // Update remote selections (for highlighting)
         if (remotePuzzle.selections) {
             puzzleEngine.setRemoteSelections(remotePuzzle.selections);
+
+            // Apply drag positions from remote selections
+            for (const [userId, selection] of Object.entries(remotePuzzle.selections)) {
+                if (selection.positions) {
+                    puzzleEngine.applyRemotePositions(selection.positions, localSelectedIds);
+                }
+            }
         }
 
         // Update stats

@@ -145,16 +145,21 @@ class PuzzleAPI {
      * @param {string} color - User's color
      * @param {string} displayName - User's display name
      * @param {boolean} referenceSelected - Whether reference image is selected
+     * @param {Object} positions - Optional map of pieceId -> {x, y} for real-time drag sync
      * @returns {Promise<Object>}
      */
-    async updateSelection(imagePath, pieceIds, color, displayName, referenceSelected = false) {
-        return await this.request('updateSelection', 'POST', {
+    async updateSelection(imagePath, pieceIds, color, displayName, referenceSelected = false, positions = null) {
+        const payload = {
             image: imagePath,
             pieceIds,
             color,
             displayName,
             referenceSelected
-        });
+        };
+        if (positions) {
+            payload.positions = positions;
+        }
+        return await this.request('updateSelection', 'POST', payload);
     }
 
     // ==================== SSE Subscription ====================

@@ -333,12 +333,23 @@ function updateSelection() {
 
     // Update or clear user's selection
     if (isset($data['pieceIds']) && is_array($data['pieceIds']) && count($data['pieceIds']) > 0) {
-        $state['selections'][$userId] = [
+        $selectionData = [
             'pieceIds' => $data['pieceIds'],
             'color' => $data['color'] ?? '#667eea',
             'displayName' => $data['displayName'] ?? 'Player',
             'timestamp' => time()
         ];
+
+        // Include positions if provided (for real-time drag sync)
+        if (isset($data['positions']) && is_array($data['positions'])) {
+            $selectionData['positions'] = $data['positions'];
+        }
+
+        if (isset($data['referenceSelected'])) {
+            $selectionData['referenceSelected'] = $data['referenceSelected'];
+        }
+
+        $state['selections'][$userId] = $selectionData;
     } else {
         // Clear selection
         unset($state['selections'][$userId]);

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-    Multiplayer Jigsaw Puzzle - v2.0.2
+    Multiplayer Jigsaw Puzzle - v2.1.0
     Multiuser Mode: Shared puzzles, real-time sync
     Deployed via GitHub Actions
 -->
@@ -8,7 +8,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="version" content="2.0.2">
+    <meta name="version" content="2.1.0">
     <meta name="description" content="Solve jigsaw puzzles together in real-time with friends and family">
 
     <!-- Open Graph / Facebook / iMessage -->
@@ -48,6 +48,8 @@
                 <select id="imageSelect">
                     <option value="images/DisneyHoliday.jpg">Disney Holiday</option>
                 </select>
+                <button id="uploadBtn" title="Upload a new image">+</button>
+                <input type="file" id="imageUpload" accept="image/*" style="display: none;">
             </div>
             <button id="startBtn">Start New Puzzle</button>
             <button id="resetViewBtn">Reset View</button>
@@ -57,7 +59,7 @@
             <button id="settingsBtn">Settings</button>
             <div id="stats">
                 <span id="progressText">0% Complete</span>
-                <span id="version" style="color: #999; font-size: 12px;">v2.0.2</span>
+                <span id="version" style="color: #999; font-size: 12px;">v2.1.0</span>
             </div>
         </div>
 
@@ -65,10 +67,12 @@
             <canvas id="puzzleCanvas"></canvas>
         </div>
 
-        <div id="instructions">
-            <h3>Controls:</h3>
-            <p><strong>Touch:</strong> Tap = Pan | Hold & Drag = Move Piece | Edge = Auto-pan | Pinch = Zoom</p>
-            <p><strong>Mouse:</strong> Click & Drag = Pan | Alt+Drag = Move Piece | Shift+Drag = Selection Box</p>
+        <div id="instructions" class="collapsed">
+            <h3 id="instructionsToggle">Controls <span class="toggle-icon">▶</span></h3>
+            <div class="instructions-content">
+                <p><strong>Touch:</strong> Tap = Pan | Hold & Drag = Move Piece | Edge = Auto-pan | Pinch = Zoom</p>
+                <p><strong>Mouse:</strong> Click & Drag = Pan | Alt+Drag = Move Piece | Shift+Drag = Selection Box</p>
+            </div>
         </div>
     </div>
 
@@ -104,6 +108,14 @@
                     <button id="showBackupsBtn" class="btn-secondary">View Backups</button>
                     <button id="resetPuzzleBtn" class="btn-danger">Reset Puzzle</button>
                     <p class="settings-note">Backups are created automatically every 3 minutes when active.</p>
+                </section>
+
+                <!-- Uploaded Images -->
+                <section class="settings-section">
+                    <h3>Uploaded Images</h3>
+                    <div id="uploadedImagesList">
+                        <p class="settings-note">Loading...</p>
+                    </div>
                 </section>
             </div>
         </div>

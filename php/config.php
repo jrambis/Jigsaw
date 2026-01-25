@@ -8,9 +8,15 @@
 define('DATA_DIR', __DIR__ . '/../data');
 define('SHARED_DIR', DATA_DIR . '/shared');
 define('USERS_DIR', DATA_DIR . '/users');
+define('UPLOADS_DIR', DATA_DIR . '/uploads');
+
+// Upload settings
+define('MAX_UPLOAD_SIZE', 10 * 1024 * 1024); // 10MB
+define('MAX_IMAGE_DIMENSION', 4096); // Max width/height in pixels
+define('ALLOWED_IMAGE_TYPES', ['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 // Ensure directories exist
-foreach ([DATA_DIR, SHARED_DIR, USERS_DIR] as $dir) {
+foreach ([DATA_DIR, SHARED_DIR, USERS_DIR, UPLOADS_DIR] as $dir) {
     if (!file_exists($dir)) {
         mkdir($dir, 0755, true);
     }

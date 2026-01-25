@@ -1,7 +1,7 @@
 <?php
 /**
  * Jigsaw Puzzle API - Multiuser shared puzzle system
- * @version 2.0.0
+ * @version 2.1.0
  *
  * Endpoints:
  * - POST /api.php?action=saveShared - Save shared puzzle state
@@ -13,6 +13,8 @@
  * - GET /api.php?action=subscribe&image={imageName} - SSE subscription
  * - POST /api.php?action=saveUserPrefs - Save user preferences (name, color)
  * - GET /api.php?action=getUserPrefs - Get user preferences
+ * - POST /api.php?action=uploadImage - Upload a new image (multipart/form-data)
+ * - GET /api.php?action=listImages - List all available images
  */
 
 require_once __DIR__ . '/php/config.php';
@@ -486,6 +488,244 @@ function getUserPrefs() {
     sendResponse(true, $prefs, 'Preferences retrieved');
 }
 
+/**
+ * Upload an image
+ */
+function uploadImage() {
+    // Check if file was uploaded
+    if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        $errorMessage = 'No file uploaded';
+        if (isset($_FILES['image']['error'])) {
+            switch ($_FILES['image']['error']) {
+                case UPLOAD_ERR_INI_SIZE:
+                case UPLOAD_ERR_FORM_SIZE:
+                    $errorMessage = 'File too large';
+                    break;
+                case UPLOAD_ERR_PARTIAL:
+                    $errorMessage = 'Upload incomplete';
+                    break;
+                case UPLOAD_ERR_NO_FILE:
+                    $errorMessage = 'No file selected';
+                    break;
+            }
+        }
+        sendResponse(false, null, $errorMessage, 400);
+    }
+
+    $file = $_FILES['image'];
+    $displayName = isset($_POST['name']) ? trim($_POST['name']) : '';
+
+    // Validate file size
+    if ($file['size'] > MAX_UPLOAD_SIZE) {
+        sendResponse(false, null, 'File too large. Maximum size is 10MB.', 400);
+    }
+
+    // Validate MIME type using finfo (server-side validation)
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mimeType = $finfo->file($file['tmp_name']);
+
+    if (!in_array($mimeType, ALLOWED_IMAGE_TYPES)) {
+        sendResponse(false, null, 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP.', 400);
+    }
+
+    // Validate image dimensions
+    $imageInfo = getimagesize($file['tmp_name']);
+    if (!$imageInfo) {
+        sendResponse(false, null, 'Invalid image file.', 400);
+    }
+
+    $width = $imageInfo[0];
+    $height = $imageInfo[1];
+
+    if ($width > MAX_IMAGE_DIMENSION || $height > MAX_IMAGE_DIMENSION) {
+        sendResponse(false, null, "Image too large. Maximum dimension is " . MAX_IMAGE_DIMENSION . "px.", 400);
+    }
+
+    // Generate unique filename
+    $timestamp = time();
+    $hash = substr(md5($file['tmp_name'] . $timestamp . rand()), 0, 8);
+    $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp'][$mimeType];
+    $filename = "upload_{$timestamp}_{$hash}.{$ext}";
+    $filepath = UPLOADS_DIR . '/' . $filename;
+
+    // Move uploaded file
+    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
+        sendResponse(false, null, 'Failed to save uploaded file.', 500);
+    }
+
+    // Generate display name if not provided
+    if (empty($displayName)) {
+        // Use original filename without extension
+        $displayName = pathinfo($file['name'], PATHINFO_FILENAME);
+        // Clean up common patterns
+        $displayName = preg_replace('/[_-]+/', ' ', $displayName);
+        $displayName = ucwords(trim($displayName));
+    }
+
+    // Store metadata
+    $metadataPath = UPLOADS_DIR . '/metadata.json';
+    $metadata = safeReadJson($metadataPath) ?: [];
+    $metadata[$filename] = [
+        'name' => $displayName,
+        'uploadedAt' => $timestamp,
+        'originalName' => $file['name'],
+        'size' => $file['size'],
+        'dimensions' => ['width' => $width, 'height' => $height]
+    ];
+
+    if (!safeWriteJson($metadataPath, $metadata)) {
+        // Clean up the uploaded file if metadata save fails
+        unlink($filepath);
+        sendResponse(false, null, 'Failed to save image metadata.', 500);
+    }
+
+    sendResponse(true, [
+        'imagePath' => 'data/uploads/' . $filename,
+        'name' => $displayName,
+        'filename' => $filename
+    ], 'Image uploaded successfully');
+}
+
+/**
+ * Delete an uploaded image and its puzzle data
+ */
+function deleteImage() {
+    $input = file_get_contents('php://input');
+    $data = json_decode($input, true);
+
+    if (!$data || !isset($data['imagePath'])) {
+        sendResponse(false, null, 'Image path required', 400);
+    }
+
+    $imagePath = $data['imagePath'];
+
+    // Security: Only allow deleting uploaded images (not built-in)
+    if (strpos($imagePath, 'data/uploads/') !== 0) {
+        sendResponse(false, null, 'Can only delete uploaded images', 403);
+    }
+
+    // Extract filename from path
+    $filename = basename($imagePath);
+
+    // Validate filename format (must match upload pattern)
+    if (!preg_match('/^upload_\d+_[a-f0-9]+\.(jpg|jpeg|png|gif|webp)$/', $filename)) {
+        sendResponse(false, null, 'Invalid image filename', 400);
+    }
+
+    $filepath = UPLOADS_DIR . '/' . $filename;
+
+    // Check if file exists
+    if (!file_exists($filepath)) {
+        sendResponse(false, null, 'Image not found', 404);
+    }
+
+    // Delete the image file
+    if (!unlink($filepath)) {
+        sendResponse(false, null, 'Failed to delete image file', 500);
+    }
+
+    // Remove from metadata
+    $metadataPath = UPLOADS_DIR . '/metadata.json';
+    $metadata = safeReadJson($metadataPath) ?: [];
+    if (isset($metadata[$filename])) {
+        unset($metadata[$filename]);
+        safeWriteJson($metadataPath, $metadata);
+    }
+
+    // Delete associated puzzle data
+    $imageName = imagePathToName($imagePath);
+    $puzzleDir = getSharedPuzzleDir($imageName);
+    if (is_dir($puzzleDir)) {
+        // Delete all files in puzzle directory
+        $files = glob($puzzleDir . '/*');
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+        // Delete backups subdirectory
+        $backupDir = $puzzleDir . '/backups';
+        if (is_dir($backupDir)) {
+            $backupFiles = glob($backupDir . '/*');
+            foreach ($backupFiles as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+            rmdir($backupDir);
+        }
+        rmdir($puzzleDir);
+    }
+
+    sendResponse(true, ['deleted' => $imagePath], 'Image and puzzle data deleted');
+}
+
+/**
+ * List all available images (built-in + uploaded)
+ */
+function listImages() {
+    $images = [];
+
+    // Scan built-in images from /images/ directory
+    $imagesDir = __DIR__ . '/images';
+    if (is_dir($imagesDir)) {
+        $files = glob($imagesDir . '/*.{jpg,jpeg,png,gif,webp}', GLOB_BRACE);
+        foreach ($files as $file) {
+            $filename = basename($file);
+            $name = pathinfo($filename, PATHINFO_FILENAME);
+            // Convert camelCase/PascalCase to readable name
+            $displayName = preg_replace('/([a-z])([A-Z])/', '$1 $2', $name);
+
+            $images[] = [
+                'path' => 'images/' . $filename,
+                'name' => $displayName,
+                'isUploaded' => false,
+                'timestamp' => filemtime($file)
+            ];
+        }
+    }
+
+    // Scan uploaded images
+    if (is_dir(UPLOADS_DIR)) {
+        $metadataPath = UPLOADS_DIR . '/metadata.json';
+        $metadata = safeReadJson($metadataPath) ?: [];
+
+        $uploadedFiles = glob(UPLOADS_DIR . '/*.{jpg,jpeg,png,gif,webp}', GLOB_BRACE);
+        foreach ($uploadedFiles as $file) {
+            $filename = basename($file);
+            $meta = $metadata[$filename] ?? null;
+
+            $displayName = $meta['name'] ?? pathinfo($filename, PATHINFO_FILENAME);
+            $timestamp = $meta['uploadedAt'] ?? filemtime($file);
+
+            $images[] = [
+                'path' => 'data/uploads/' . $filename,
+                'name' => $displayName,
+                'isUploaded' => true,
+                'timestamp' => $timestamp
+            ];
+        }
+    }
+
+    // Sort: built-in first (alphabetically), then uploads by date descending
+    usort($images, function($a, $b) {
+        // Built-in images come first
+        if ($a['isUploaded'] !== $b['isUploaded']) {
+            return $a['isUploaded'] ? 1 : -1;
+        }
+        // Within same category
+        if ($a['isUploaded']) {
+            // Uploads: newest first
+            return $b['timestamp'] - $a['timestamp'];
+        } else {
+            // Built-in: alphabetical
+            return strcasecmp($a['name'], $b['name']);
+        }
+    });
+
+    sendResponse(true, ['images' => $images], 'Images listed successfully');
+}
+
 // Route request based on action
 $action = $_GET['action'] ?? '';
 
@@ -551,8 +791,29 @@ try {
             getUserPrefs();
             break;
 
+        case 'uploadImage':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                sendResponse(false, null, 'Method not allowed', 405);
+            }
+            uploadImage();
+            break;
+
+        case 'listImages':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                sendResponse(false, null, 'Method not allowed', 405);
+            }
+            listImages();
+            break;
+
+        case 'deleteImage':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                sendResponse(false, null, 'Method not allowed', 405);
+            }
+            deleteImage();
+            break;
+
         default:
-            sendResponse(false, null, 'Invalid action. Available: saveShared, loadShared, resetPuzzle, listBackups, restoreBackup, updateSelection, subscribe, saveUserPrefs, getUserPrefs', 400);
+            sendResponse(false, null, 'Invalid action. Available: saveShared, loadShared, resetPuzzle, listBackups, restoreBackup, updateSelection, subscribe, saveUserPrefs, getUserPrefs, uploadImage, listImages', 400);
     }
 } catch (Exception $e) {
     sendResponse(false, null, 'Server error: ' . $e->getMessage(), 500);

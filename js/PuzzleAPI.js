@@ -222,6 +222,81 @@ class PuzzleAPI {
         this.onPuzzleUpdate = null;
     }
 
+    // ==================== Image Upload Methods ====================
+
+    /**
+     * Upload an image file
+     * @param {File} file - Image file to upload
+     * @param {string} name - User-provided display name
+     * @param {Function} onProgress - Progress callback (0-100)
+     * @returns {Promise<Object>} Upload result with imagePath
+     */
+    async uploadImage(file, name, onProgress = null) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const formData = new FormData();
+
+            formData.append('image', file);
+            formData.append('name', name);
+
+            // Track upload progress
+            if (onProgress) {
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        onProgress(percent);
+                    }
+                });
+            }
+
+            xhr.addEventListener('load', () => {
+                try {
+                    const result = JSON.parse(xhr.responseText);
+                    if (result.success) {
+                        resolve(result);
+                    } else {
+                        reject(new Error(result.message || 'Upload failed'));
+                    }
+                } catch (e) {
+                    reject(new Error('Invalid server response'));
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                reject(new Error('Network error during upload'));
+            });
+
+            xhr.addEventListener('abort', () => {
+                reject(new Error('Upload cancelled'));
+            });
+
+            const url = new URL(this.baseUrl, window.location.origin);
+            url.searchParams.set('action', 'uploadImage');
+
+            xhr.open('POST', url.toString());
+            xhr.withCredentials = true;
+            xhr.send(formData);
+        });
+    }
+
+    /**
+     * List all available images (built-in + uploaded)
+     * @returns {Promise<Array>} Array of image objects {path, name, isUploaded}
+     */
+    async listImages() {
+        const result = await this.request('listImages', 'GET');
+        return result.data?.images || [];
+    }
+
+    /**
+     * Delete an uploaded image and its puzzle data
+     * @param {string} imagePath - Path of the image to delete
+     * @returns {Promise<Object>} Deletion result
+     */
+    async deleteImage(imagePath) {
+        return await this.request('deleteImage', 'POST', { imagePath });
+    }
+
     // ==================== Legacy Methods (kept for compatibility) ====================
 
     /**

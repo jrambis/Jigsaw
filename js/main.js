@@ -1,10 +1,10 @@
 /**
  * Main application file - Multiuser Jigsaw Puzzle
  * Handles puzzle lifecycle, auto-save, SSE sync, and user management
- * @version 2.0.2
+ * @version 2.1.0
  */
 
-const VERSION = '2.0.2';
+const VERSION = '2.1.0';
 
 let puzzleCutter;
 let puzzleEngine;
@@ -31,6 +31,8 @@ let canvas;
 let pieceCountSelect;
 let pieceCountGroup;
 let imageSelect;
+let uploadBtn;
+let imageUpload;
 let startBtn;
 let resetViewBtn;
 let referenceBtn;
@@ -60,6 +62,8 @@ async function init() {
     pieceCountSelect = document.getElementById('pieceCount');
     pieceCountGroup = document.getElementById('pieceCountGroup');
     imageSelect = document.getElementById('imageSelect');
+    uploadBtn = document.getElementById('uploadBtn');
+    imageUpload = document.getElementById('imageUpload');
     startBtn = document.getElementById('startBtn');
     resetViewBtn = document.getElementById('resetViewBtn');
     referenceBtn = document.getElementById('referenceBtn');
@@ -88,6 +92,9 @@ async function init() {
     // Update stats regularly
     setInterval(updateStats, 100);
 
+    // Populate image dropdown from server
+    await populateImageDropdown();
+
     // Set initial image path
     currentImagePath = imageSelect.value;
 
@@ -112,6 +119,12 @@ function setupEventListeners() {
 
     // Image dropdown change - switch puzzles
     imageSelect.addEventListener('change', handleImageChange);
+
+    // Upload button - trigger file picker
+    if (uploadBtn && imageUpload) {
+        uploadBtn.addEventListener('click', () => imageUpload.click());
+        imageUpload.addEventListener('change', handleImageUpload);
+    }
 
     // Settings button
     if (settingsBtn) {
@@ -156,6 +169,15 @@ function setupEventListeners() {
             }
         });
     });
+
+    // Instructions toggle
+    const instructionsToggle = document.getElementById('instructionsToggle');
+    const instructions = document.getElementById('instructions');
+    if (instructionsToggle && instructions) {
+        instructionsToggle.addEventListener('click', () => {
+            instructions.classList.toggle('collapsed');
+        });
+    }
 }
 
 /**
@@ -248,6 +270,112 @@ async function handleImageChange() {
 
     // Subscribe to updates for new image
     subscribeToUpdates();
+}
+
+/**
+ * Populate image dropdown from server
+ */
+async function populateImageDropdown() {
+    try {
+        const images = await puzzleAPI.listImages();
+
+        // Remember current selection
+        const previousValue = imageSelect.value;
+
+        // Clear existing options
+        imageSelect.innerHTML = '';
+
+        // Add options for each image
+        images.forEach(image => {
+            const option = document.createElement('option');
+            option.value = image.path;
+            option.textContent = image.name;
+            imageSelect.appendChild(option);
+        });
+
+        // Restore previous selection if still available
+        if (previousValue) {
+            const exists = Array.from(imageSelect.options).some(opt => opt.value === previousValue);
+            if (exists) {
+                imageSelect.value = previousValue;
+            }
+        }
+
+        // Fallback if no images
+        if (images.length === 0) {
+            const option = document.createElement('option');
+            option.value = 'images/DisneyHoliday.jpg';
+            option.textContent = 'Disney Holiday';
+            imageSelect.appendChild(option);
+        }
+    } catch (error) {
+        console.error('Failed to load image list:', error);
+        // Keep default option as fallback
+    }
+}
+
+/**
+ * Handle image upload from file input
+ */
+async function handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Reset the input so the same file can be selected again
+    e.target.value = '';
+
+    // Client-side validation
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+    if (!allowedTypes.includes(file.type)) {
+        showMessage('Invalid file type. Please use JPEG, PNG, GIF, or WebP.');
+        return;
+    }
+
+    if (file.size > maxSize) {
+        showMessage('File too large. Maximum size is 10MB.');
+        return;
+    }
+
+    // Prompt user for a display name
+    const defaultName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+    const displayName = prompt('Enter a name for this puzzle:', defaultName);
+
+    if (displayName === null) {
+        // User cancelled
+        return;
+    }
+
+    // Show loading overlay with progress
+    showLoadingOverlay('Uploading image... 0%');
+
+    try {
+        const result = await puzzleAPI.uploadImage(file, displayName.trim(), (percent) => {
+            showLoadingOverlay(`Uploading image... ${percent}%`);
+        });
+
+        // Refresh the dropdown
+        await populateImageDropdown();
+
+        // Select the newly uploaded image
+        imageSelect.value = result.data.imagePath;
+        currentImagePath = result.data.imagePath;
+
+        // Clear existing puzzle state and show start button
+        puzzleEngine.setPieces([]);
+        puzzleLoaded = false;
+        startBtn.style.display = '';
+        pieceCountGroup.style.display = '';
+
+        hideLoadingOverlay();
+        showMessage(`"${result.data.name}" uploaded! Click "Start New Puzzle" to begin.`);
+
+    } catch (error) {
+        hideLoadingOverlay();
+        console.error('Upload failed:', error);
+        showMessage('Upload failed: ' + error.message);
+    }
 }
 
 /**
@@ -629,6 +757,97 @@ function openSettingsModal() {
     if (colorInput) colorInput.value = userPrefs.color;
 
     settingsModal.classList.add('active');
+
+    // Load uploaded images list
+    loadUploadedImagesList();
+}
+
+/**
+ * Load and display uploaded images in settings
+ */
+async function loadUploadedImagesList() {
+    const listContainer = document.getElementById('uploadedImagesList');
+    if (!listContainer) return;
+
+    listContainer.innerHTML = '<p class="settings-note">Loading...</p>';
+
+    try {
+        const images = await puzzleAPI.listImages();
+        const uploadedImages = images.filter(img => img.isUploaded);
+
+        if (uploadedImages.length === 0) {
+            listContainer.innerHTML = '<p class="settings-note">No uploaded images yet.</p>';
+            return;
+        }
+
+        let html = '';
+        uploadedImages.forEach(image => {
+            const date = new Date(image.timestamp * 1000);
+            const dateStr = date.toLocaleDateString();
+            html += `
+                <div class="uploaded-image-item">
+                    <div class="uploaded-image-info">
+                        <span class="uploaded-image-name">${escapeHtml(image.name)}</span>
+                        <span class="uploaded-image-date">Uploaded ${dateStr}</span>
+                    </div>
+                    <button class="delete-image-btn" data-path="${escapeHtml(image.path)}">Delete</button>
+                </div>
+            `;
+        });
+
+        listContainer.innerHTML = html;
+
+        // Add delete handlers
+        listContainer.querySelectorAll('.delete-image-btn').forEach(btn => {
+            btn.addEventListener('click', () => deleteUploadedImage(btn.dataset.path));
+        });
+    } catch (error) {
+        console.error('Failed to load uploaded images:', error);
+        listContainer.innerHTML = '<p class="settings-note">Failed to load images.</p>';
+    }
+}
+
+/**
+ * Delete an uploaded image
+ */
+async function deleteUploadedImage(imagePath) {
+    const imageName = imagePath.split('/').pop().replace(/\.[^/.]+$/, '');
+
+    if (!confirm(`Delete this image and its puzzle data?\n\nThis cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        await puzzleAPI.deleteImage(imagePath);
+
+        // Refresh the list
+        await loadUploadedImagesList();
+
+        // Refresh the dropdown
+        await populateImageDropdown();
+
+        // If we deleted the current image, switch to first available
+        if (currentImagePath === imagePath) {
+            if (imageSelect.options.length > 0) {
+                imageSelect.selectedIndex = 0;
+                await handleImageChange();
+            }
+        }
+
+        showMessage('Image deleted');
+    } catch (error) {
+        console.error('Delete failed:', error);
+        showMessage('Failed to delete image: ' + error.message);
+    }
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 /**

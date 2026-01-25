@@ -389,6 +389,9 @@ function subscribeToUpdates() {
     $startTime = time();
     $userId = $_SESSION['puzzle_user_id'];
 
+    // Release session lock so other requests aren't blocked during SSE polling
+    session_write_close();
+
     // Send initial connection event
     echo "event: connected\n";
     echo "data: {\"userId\": \"$userId\", \"image\": \"$imageName\"}\n\n";

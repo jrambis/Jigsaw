@@ -51,6 +51,7 @@ body {
     color: var(--text-primary);
     overflow: hidden;
     height: 100vh;
+    height: 100dvh; /* iOS Safari - accounts for browser chrome */
     touch-action: none;
 }
 
@@ -58,6 +59,7 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh; /* iOS Safari - accounts for browser chrome */
 }
 
 /* Slim Header */

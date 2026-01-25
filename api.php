@@ -117,7 +117,7 @@ function saveSharedPuzzle() {
         createBackup($imageName);
     }
 
-    // Prepare state data
+    // Prepare state data - preserve existing selections (managed via updateSelection endpoint)
     $stateData = [
         'id' => 'puzzle_' . $imageName,
         'image' => $data['image'],
@@ -125,7 +125,7 @@ function saveSharedPuzzle() {
         'pieces' => $data['state']['pieces'] ?? [],
         'groups' => $data['state']['groups'] ?? [],
         'camera' => $data['state']['camera'] ?? ['x' => 0, 'y' => 0, 'scale' => 1],
-        'selections' => $data['state']['selections'] ?? [],
+        'selections' => $existingState['selections'] ?? [],
         'metadata' => [
             'createdAt' => $existingState['metadata']['createdAt'] ?? time(),
             'updatedAt' => time(),

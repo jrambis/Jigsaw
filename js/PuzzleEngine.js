@@ -1424,14 +1424,26 @@ class PuzzleEngine {
     }
 
     /**
-     * Reset camera view
+     * Reset camera view - auto-fit puzzle to screen with padding
      */
     resetView() {
         if (this.pieces.length > 0) {
             const bounds = this.calculatePuzzleBounds();
-            this.camera.x = -bounds.centerX + this.canvas.width / 2;
-            this.camera.y = -bounds.centerY + this.canvas.height / 2;
-            this.camera.scale = 1;
+            const puzzleWidth = bounds.maxX - bounds.minX;
+            const puzzleHeight = bounds.maxY - bounds.minY;
+
+            // Calculate scale to fit puzzle with 15% padding on each side
+            const padding = 0.85;
+            const scaleX = (this.canvas.width * padding) / puzzleWidth;
+            const scaleY = (this.canvas.height * padding) / puzzleHeight;
+            const fitScale = Math.min(scaleX, scaleY);
+
+            // Clamp scale: min 0.5 (pieces stay usable), max 1 (don't zoom in)
+            this.camera.scale = Math.max(0.5, Math.min(1, fitScale));
+
+            // Center on puzzle bounds
+            this.camera.x = -bounds.centerX * this.camera.scale + this.canvas.width / 2;
+            this.camera.y = -bounds.centerY * this.camera.scale + this.canvas.height / 2;
         }
     }
 

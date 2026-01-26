@@ -237,6 +237,23 @@ body {
     opacity: 1;
 }
 
+.tool-palette.horizontal {
+    flex-direction: row;
+}
+
+.tool-palette.horizontal .tool-palette-handle {
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    writing-mode: vertical-rl;
+}
+
+.tool-palette.horizontal .tool-divider {
+    width: 1px;
+    height: auto;
+    margin: 4px 0;
+}
+
 .tool-palette-handle {
     text-align: center;
     color: var(--text-muted);

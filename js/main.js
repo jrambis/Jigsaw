@@ -1509,23 +1509,29 @@ function setupToolPalette() {
 
     if (!palette || !handle) return;
 
-    // Restore saved position
+    // Restore saved position and orientation
     const savedPos = localStorage.getItem('toolPalettePosition');
     if (savedPos) {
-        const { x, y } = JSON.parse(savedPos);
+        const { x, y, horizontal } = JSON.parse(savedPos);
         palette.style.right = 'auto';
         palette.style.bottom = 'auto';
         palette.style.left = `${x}px`;
         palette.style.top = `${y}px`;
+        if (horizontal) {
+            palette.classList.add('horizontal');
+        }
         constrainToViewport(palette);
     }
 
     // Drag state
     let isDragging = false;
+    let hasMoved = false;
     let startX, startY, startLeft, startTop;
+    const DRAG_THRESHOLD = 5; // pixels of movement to count as drag vs tap
 
     handle.addEventListener('pointerdown', (e) => {
         isDragging = true;
+        hasMoved = false;
         palette.classList.add('dragging');
         handle.setPointerCapture(e.pointerId);
 
@@ -1548,6 +1554,11 @@ function setupToolPalette() {
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
 
+        // Check if movement exceeds threshold
+        if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+            hasMoved = true;
+        }
+
         palette.style.left = `${startLeft + dx}px`;
         palette.style.top = `${startTop + dy}px`;
     });
@@ -1558,13 +1569,19 @@ function setupToolPalette() {
         palette.classList.remove('dragging');
         handle.releasePointerCapture(e.pointerId);
 
+        // If it was a tap (no significant movement), rotate the palette
+        if (!hasMoved) {
+            palette.classList.toggle('horizontal');
+        }
+
         constrainToViewport(palette);
 
-        // Save position
+        // Save position and orientation
         const rect = palette.getBoundingClientRect();
         localStorage.setItem('toolPalettePosition', JSON.stringify({
             x: rect.left,
-            y: rect.top
+            y: rect.top,
+            horizontal: palette.classList.contains('horizontal')
         }));
     });
 }

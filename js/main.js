@@ -33,6 +33,9 @@ let userPrefs = {
 // Drawer state
 let drawerOpen = false;
 
+// Puzzle timer
+let puzzleStartTime = null;
+
 // Undo/Redo history
 const undoStack = [];
 const redoStack = [];
@@ -547,6 +550,7 @@ async function autoLoadPuzzle() {
             // Load existing puzzle state
             await restoreSharedPuzzle(result.data.puzzle);
             puzzleLoaded = true;
+            puzzleStartTime = result.data.puzzle.startTime || Date.now();
             clearUndoHistory();
             startBtn.style.display = 'none';
             pieceCountGroup.style.display = 'none';
@@ -605,6 +609,7 @@ async function startNewPuzzle() {
         puzzleEngine.resetView();
 
         puzzleLoaded = true;
+        puzzleStartTime = Date.now();
 
         // Clear undo history for new puzzle
         clearUndoHistory();
@@ -1459,12 +1464,160 @@ function hideLoadingOverlay() {
 }
 
 /**
- * Show completion message
+ * Show completion celebration with confetti, image reveal, and stats
  */
 function showCompletionMessage() {
     if (puzzleEngine.completionShown) return;
     puzzleEngine.completionShown = true;
-    alert('Congratulations! Puzzle completed!');
+
+    // Calculate stats
+    const totalPieces = puzzleEngine.stats.totalPieces;
+    const elapsedMs = puzzleStartTime ? Date.now() - puzzleStartTime : 0;
+    const elapsedSec = Math.floor(elapsedMs / 1000);
+    const minutes = Math.floor(elapsedSec / 60);
+    const seconds = elapsedSec % 60;
+    const timeStr = minutes > 0
+        ? `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+        : `${seconds}s`;
+    const ppm = minutes > 0 || seconds > 0
+        ? (totalPieces / (elapsedSec / 60)).toFixed(1)
+        : '∞';
+
+    // Build the image src for the reveal
+    const imgSrc = puzzleEngine.sourceImage ? puzzleEngine.sourceImage.src : '';
+
+    // Create celebration overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'celebrationOverlay';
+    overlay.className = 'celebration-overlay';
+    overlay.innerHTML = `
+        <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
+        <div class="celebration-modal">
+            ${imgSrc ? `<div class="celebration-image-wrap">
+                <img src="${imgSrc}" class="celebration-image" alt="Completed puzzle" />
+            </div>` : ''}
+            <div class="celebration-content">
+                <h2 class="celebration-title">🎉 Puzzle Complete!</h2>
+                <div class="celebration-stats">
+                    <div class="celebration-stat">
+                        <span class="stat-value">${totalPieces}</span>
+                        <span class="stat-label">Pieces</span>
+                    </div>
+                    <div class="celebration-stat">
+                        <span class="stat-value">${timeStr}</span>
+                        <span class="stat-label">Time</span>
+                    </div>
+                    <div class="celebration-stat">
+                        <span class="stat-value">${ppm}</span>
+                        <span class="stat-label">Per Min</span>
+                    </div>
+                </div>
+                <button class="celebration-btn" id="newPuzzleBtn">New Puzzle</button>
+                <p class="celebration-hint">Tap anywhere to dismiss</p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Trigger entrance animation
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => overlay.classList.add('active'));
+    });
+
+    // Start confetti
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    startConfetti(confettiCanvas);
+
+    // Dismiss handlers
+    function dismiss() {
+        overlay.classList.remove('active');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        // Fallback removal
+        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 600);
+    }
+
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay || e.target.closest('.celebration-hint')) {
+            dismiss();
+        }
+    });
+
+    document.getElementById('newPuzzleBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismiss();
+        // Reset for new puzzle
+        puzzleLoaded = false;
+        puzzleStartTime = null;
+        startBtn.style.display = '';
+        pieceCountGroup.style.display = '';
+    });
+}
+
+/**
+ * Canvas-based confetti explosion
+ */
+function startConfetti(canvas) {
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#ffd700', '#ff6b6b'];
+    const particles = [];
+    const PARTICLE_COUNT = 150;
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 4 + Math.random() * 8;
+        particles.push({
+            x: canvas.width / 2 + (Math.random() - 0.5) * canvas.width * 0.3,
+            y: canvas.height / 2,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - Math.random() * 6,
+            w: 4 + Math.random() * 6,
+            h: 8 + Math.random() * 12,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            rotation: Math.random() * 360,
+            rotSpeed: (Math.random() - 0.5) * 12,
+            gravity: 0.12 + Math.random() * 0.08,
+            opacity: 1,
+            decay: 0.003 + Math.random() * 0.005
+        });
+    }
+
+    let animId;
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        let alive = false;
+        for (const p of particles) {
+            if (p.opacity <= 0) continue;
+            alive = true;
+
+            p.x += p.vx;
+            p.vy += p.gravity;
+            p.y += p.vy;
+            p.vx *= 0.99;
+            p.rotation += p.rotSpeed;
+            p.opacity -= p.decay;
+
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate((p.rotation * Math.PI) / 180);
+            ctx.globalAlpha = Math.max(0, p.opacity);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+            ctx.restore();
+        }
+
+        if (alive) {
+            animId = requestAnimationFrame(animate);
+        }
+    }
+
+    animate();
+
+    // Cleanup after animation
+    setTimeout(() => cancelAnimationFrame(animId), 5000);
 }
 
 /**

@@ -15,6 +15,8 @@
  * - GET /api.php?action=getUserPrefs - Get user preferences
  * - POST /api.php?action=uploadImage - Upload a new image (multipart/form-data)
  * - GET /api.php?action=listImages - List all available images
+ * - POST /api.php?action=reportBug - Submit a bug report
+ * - GET /api.php?action=listBugs - List all bug reports
  */
 
 require_once __DIR__ . '/php/config.php';
@@ -781,6 +783,83 @@ function listImages() {
     sendResponse(true, ['images' => $images], 'Images listed successfully');
 }
 
+/**
+ * Submit a bug report
+ */
+function reportBug() {
+    $input = file_get_contents('php://input');
+    $data = json_decode($input, true);
+
+    if (!$data || !isset($data['description'])) {
+        sendResponse(false, null, 'Missing required field: description', 400);
+    }
+
+    $description = trim($data['description']);
+    if (empty($description)) {
+        sendResponse(false, null, 'Description cannot be empty', 400);
+    }
+
+    // Sanitize description
+    $description = htmlspecialchars($description, ENT_QUOTES, 'UTF-8');
+    $description = substr($description, 0, 2000);
+
+    // Anonymize IP (zero last octet)
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $parts = explode('.', $ip);
+    if (count($parts) === 4) {
+        $parts[3] = '0';
+        $ip = implode('.', $parts);
+    }
+
+    $report = [
+        'description' => $description,
+        'timestamp' => $data['timestamp'] ?? null,
+        'consoleLog' => $data['consoleLog'] ?? [],
+        'userAgent' => $data['userAgent'] ?? null,
+        'viewport' => $data['viewport'] ?? null,
+        'puzzleState' => $data['puzzleState'] ?? null,
+        'url' => $data['url'] ?? null,
+        'receivedAt' => date('c'),
+        'ip' => $ip
+    ];
+
+    $filename = 'bug_' . date('Ymd_His') . '_' . uniqid() . '.json';
+    $filepath = BUGS_DIR . '/' . $filename;
+
+    if (safeWriteJson($filepath, $report)) {
+        sendResponse(true, ['filename' => $filename], 'Bug report submitted successfully');
+    } else {
+        sendResponse(false, null, 'Failed to save bug report', 500);
+    }
+}
+
+/**
+ * List all bug reports (newest first)
+ */
+function listBugs() {
+    if (!is_dir(BUGS_DIR)) {
+        sendResponse(true, ['bugs' => []], 'No bug reports found');
+    }
+
+    $files = glob(BUGS_DIR . '/bug_*.json');
+    $bugs = [];
+
+    foreach ($files as $file) {
+        $data = safeReadJson($file);
+        if ($data) {
+            $data['_filename'] = basename($file);
+            $bugs[] = $data;
+        }
+    }
+
+    // Sort by receivedAt descending (newest first)
+    usort($bugs, function($a, $b) {
+        return strcmp($b['receivedAt'] ?? '', $a['receivedAt'] ?? '');
+    });
+
+    sendResponse(true, ['bugs' => $bugs], 'Bug reports retrieved successfully');
+}
+
 // Route request based on action
 $action = $_GET['action'] ?? '';
 
@@ -867,8 +946,22 @@ try {
             deleteImage();
             break;
 
+        case 'reportBug':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                sendResponse(false, null, 'Method not allowed', 405);
+            }
+            reportBug();
+            break;
+
+        case 'listBugs':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                sendResponse(false, null, 'Method not allowed', 405);
+            }
+            listBugs();
+            break;
+
         default:
-            sendResponse(false, null, 'Invalid action. Available: saveShared, loadShared, resetPuzzle, listBackups, restoreBackup, updateSelection, subscribe, saveUserPrefs, getUserPrefs, uploadImage, listImages', 400);
+            sendResponse(false, null, 'Invalid action. Available: saveShared, loadShared, resetPuzzle, listBackups, restoreBackup, updateSelection, subscribe, saveUserPrefs, getUserPrefs, uploadImage, listImages, reportBug, listBugs', 400);
     }
 } catch (Exception $e) {
     sendResponse(false, null, 'Server error: ' . $e->getMessage(), 500);

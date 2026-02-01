@@ -4,6 +4,24 @@
  * @version 2.1.0
  */
 
+// Console log buffer - captures last 50 entries for bug reports
+const consoleBuffer = [];
+const MAX_CONSOLE_BUFFER = 50;
+['log', 'warn', 'error'].forEach(method => {
+    const original = console[method].bind(console);
+    console[method] = (...args) => {
+        consoleBuffer.push({
+            level: method,
+            message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
+            timestamp: new Date().toISOString()
+        });
+        if (consoleBuffer.length > MAX_CONSOLE_BUFFER) {
+            consoleBuffer.shift();
+        }
+        original(...args);
+    };
+});
+
 const VERSION = '2.1.0';
 
 let puzzleCutter;
@@ -173,6 +191,12 @@ function setupEventListeners() {
     const themeBtn = document.getElementById('themeBtn');
     if (themeBtn) {
         themeBtn.addEventListener('click', toggleTheme);
+    }
+
+    // Bug report button
+    const bugReportBtn = document.getElementById('bugReportBtn');
+    if (bugReportBtn) {
+        bugReportBtn.addEventListener('click', openBugReportModal);
     }
 
     // Settings modal close
@@ -1825,6 +1849,94 @@ function updateSettingsForm() {
     if (colorInput) colorInput.value = userPrefs.color;
     if (canvasColorLightInput) canvasColorLightInput.value = userPrefs.canvasColorLight;
     if (canvasColorDarkInput) canvasColorDarkInput.value = userPrefs.canvasColorDark;
+}
+
+/**
+ * Open bug report modal
+ */
+function openBugReportModal() {
+    const overlay = document.getElementById('bugReportOverlay');
+    const textarea = document.getElementById('bugDescription');
+    if (!overlay) return;
+
+    textarea.value = '';
+    overlay.classList.add('active');
+    textarea.focus();
+
+    // Close handlers
+    const closeBtn = document.getElementById('closeBugReportBtn');
+    const cancelBtn = document.getElementById('cancelBugReportBtn');
+    const submitBtn = document.getElementById('submitBugReportBtn');
+
+    const close = () => {
+        overlay.classList.remove('active');
+        closeBtn.removeEventListener('click', close);
+        cancelBtn.removeEventListener('click', close);
+        submitBtn.removeEventListener('click', submit);
+        overlay.removeEventListener('click', backdropClose);
+    };
+
+    const backdropClose = (e) => {
+        if (e.target === overlay) close();
+    };
+
+    const submit = async () => {
+        const description = textarea.value.trim();
+        if (!description) {
+            textarea.style.borderColor = '#ff6b6b';
+            setTimeout(() => { textarea.style.borderColor = ''; }, 2000);
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+
+        try {
+            // Gather puzzle state
+            const puzzleState = {
+                image: currentImagePath || null,
+                pieceCount: puzzleEngine?.pieces?.length || 0,
+                progress: puzzleEngine ? puzzleEngine.getProgress() : 0,
+                players: puzzleEngine?.remoteSelections ? Object.keys(puzzleEngine.remoteSelections).length + 1 : 1
+            };
+
+            const report = {
+                description,
+                timestamp: new Date().toISOString(),
+                consoleLog: [...consoleBuffer],
+                userAgent: navigator.userAgent,
+                viewport: { width: window.innerWidth, height: window.innerHeight },
+                puzzleState,
+                url: window.location.href
+            };
+
+            const response = await fetch('api.php?action=reportBug', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(report)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                close();
+                showMessage('Bug report submitted — thank you!');
+            } else {
+                showMessage(result.message || 'Failed to submit bug report');
+            }
+        } catch (e) {
+            console.error('Failed to submit bug report:', e);
+            showMessage('Failed to submit bug report');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Report';
+        }
+    };
+
+    closeBtn.addEventListener('click', close);
+    cancelBtn.addEventListener('click', close);
+    submitBtn.addEventListener('click', submit);
+    overlay.addEventListener('click', backdropClose);
 }
 
 // Initialize when DOM is ready

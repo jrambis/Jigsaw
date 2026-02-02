@@ -87,6 +87,7 @@ class PuzzleEngine {
         this.onSelectionChange = null;   // Called when selection changes
         this.onDragMove = null;          // Called during piece drag (throttled externally)
         this.onDragStart = null;         // Called when piece drag starts (for undo)
+        this.onInteraction = null;       // Called for interaction logging (type, data)
 
         // Remote user selections (from other users)
         this.remoteSelections = {};  // userId -> { pieceIds: [], color: '#...', displayName: '...' }
@@ -367,6 +368,7 @@ class PuzzleEngine {
 
         // Otherwise, start camera panning
         this.input.isPanning = true;
+        this.logEvent('panStart', { mode: 'camera' });
     }
 
     /**
@@ -459,9 +461,14 @@ class PuzzleEngine {
             this.input.isSelecting = false;
         }
 
+        const wasPanning = this.input.isPanning;
         this.input.isPanning = false;
         this.input.heldPiece = null;
         this.input.touchCount = 0;
+
+        if (wasPanning) {
+            this.logEvent('panEnd', { mode: 'camera' });
+        }
     }
 
     /**
@@ -487,6 +494,7 @@ class PuzzleEngine {
         this.input.touchCount = e.pointers.length;
 
         this.log(`PINCH START ptrs=${e.pointers.length} screen=(${screenX.toFixed(0)},${screenY.toFixed(0)}) scale=${this.camera.scale.toFixed(2)}`);
+        this.logEvent('pinchStart', { scale: Math.round(this.camera.scale * 100) / 100 });
     }
 
     /**
@@ -536,6 +544,7 @@ class PuzzleEngine {
         }
 
         this.log(`PINCH END ptrs=${e.pointers?.length} hasCenter=${hasCenter} newPanStart=(${newPanX},${newPanY})`);
+        this.logEvent('pinchEnd', { scale: Math.round(this.camera.scale * 100) / 100 });
     }
 
     /**
@@ -548,6 +557,7 @@ class PuzzleEngine {
         const worldPos = this.screenToWorld(screenX, screenY);
 
         const piece = this.getPieceAt(worldPos.x, worldPos.y);
+        this.logEvent('tap', { hit: piece ? 'piece' : 'empty' });
         if (!piece) {
             this.clearSelection();
         }
@@ -576,6 +586,17 @@ class PuzzleEngine {
     }
 
     /**
+     * Log interaction event for debugging (always-on, lightweight)
+     * @param {string} type - Event type
+     * @param {object} data - Minimal event data
+     */
+    logEvent(type, data = {}) {
+        if (this.onInteraction) {
+            this.onInteraction(type, data);
+        }
+    }
+
+    /**
      * Handle mouse wheel for zooming
      * @param {WheelEvent} e - Wheel event
      */
@@ -598,6 +619,8 @@ class PuzzleEngine {
 
         this.camera.x += (worldAfter.x - worldBefore.x);
         this.camera.y += (worldAfter.y - worldBefore.y);
+
+        this.logEvent('wheel', { scale: Math.round(this.camera.scale * 100) / 100 });
     }
 
     /**
@@ -891,6 +914,9 @@ class PuzzleEngine {
     snapGroupToFinalPosition(groupId, offsetX, offsetY) {
         const pieceIds = this.groups.get(groupId);
         if (!pieceIds) return;
+        
+        // Log pieces being locked in place
+        this.logEvent('lock', { n: pieceIds.size });
 
         pieceIds.forEach(pieceId => {
             const piece = this.pieces.find(p => p.id === pieceId);
@@ -981,6 +1007,11 @@ class PuzzleEngine {
 
         const piecesA = this.groups.get(groupA);
         const piecesB = this.groups.get(groupB);
+        
+        // Log the merge (pieces connected)
+        this.logEvent('connect', { 
+            merged: (piecesA?.size || 0) + (piecesB?.size || 0)
+        });
 
         if (!piecesA || !piecesB) return;
 

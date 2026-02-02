@@ -22,7 +22,51 @@ const MAX_CONSOLE_BUFFER = 50;
     };
 });
 
-const VERSION = '2.1.0';
+// Interaction log buffer - captures last 100 user interactions for debugging
+const interactionBuffer = [];
+const MAX_INTERACTION_BUFFER = 100;
+
+/**
+ * Log a user interaction event (lightweight, always-on)
+ * @param {string} type - Event type (e.g., 'pan', 'pinch', 'select', 'drop')
+ * @param {object} data - Minimal event data
+ */
+function logInteraction(type, data = {}) {
+    interactionBuffer.push({
+        t: Date.now(),  // Compact timestamp (ms since epoch)
+        e: type,        // Event type
+        d: data         // Minimal data payload
+    });
+    if (interactionBuffer.length > MAX_INTERACTION_BUFFER) {
+        interactionBuffer.shift();
+    }
+}
+
+// Global error handlers - catch uncaught exceptions
+window.onerror = function(message, source, lineno, colno, error) {
+    const errorInfo = {
+        message,
+        source: source?.split('/').pop(), // Just filename
+        line: lineno,
+        col: colno,
+        stack: error?.stack?.split('\n').slice(0, 5).join('\n') // First 5 lines
+    };
+    console.error('Uncaught error:', errorInfo);
+    logInteraction('error', { msg: message, line: lineno });
+    return false; // Let default handler run too
+};
+
+window.onunhandledrejection = function(event) {
+    const reason = event.reason;
+    const errorInfo = {
+        message: reason?.message || String(reason),
+        stack: reason?.stack?.split('\n').slice(0, 5).join('\n')
+    };
+    console.error('Unhandled promise rejection:', errorInfo);
+    logInteraction('rejection', { msg: errorInfo.message });
+};
+
+const VERSION = '2.2.0';
 
 let puzzleCutter;
 let puzzleEngine;
@@ -120,6 +164,7 @@ async function init() {
     puzzleEngine.onSelectionChange = handleSelectionChange;
     puzzleEngine.onDragMove = handleDragMove;
     puzzleEngine.onDragStart = handleDragStart;
+    puzzleEngine.onInteraction = logInteraction;
 
     // Start render loop
     puzzleEngine.start();
@@ -579,6 +624,12 @@ async function autoLoadPuzzle() {
             startBtn.style.display = 'none';
             pieceCountGroup.style.display = 'none';
 
+            // Log puzzle load
+            logInteraction('puzzleLoad', { 
+                pieces: result.data.puzzle.pieceCount,
+                progress: puzzleEngine?.getProgress() || 0
+            });
+
             hideLoadingOverlay();
             showMessage('Puzzle loaded!');
         } else {
@@ -634,6 +685,9 @@ async function startNewPuzzle() {
 
         puzzleLoaded = true;
         puzzleStartTime = Date.now();
+
+        // Log puzzle start
+        logInteraction('puzzleStart', { pieces: pieces.length, image: currentImagePath });
 
         // Clear undo history for new puzzle
         clearUndoHistory();
@@ -765,6 +819,12 @@ function rebuildGroups(savedPieces) {
 function handlePieceMoveEnd(movedPieces) {
     if (!puzzleLoaded) return;
 
+    // Log the drop event
+    logInteraction('drop', { 
+        n: movedPieces?.length || 0,
+        ids: movedPieces?.slice(0, 5).map(p => p.id) // First 5 piece IDs
+    });
+
     // Push to undo stack (if not applying a remote update)
     if (!isApplyingRemoteUpdate) {
         pushUndoState();
@@ -783,6 +843,12 @@ function handlePieceMoveEnd(movedPieces) {
  * @param {boolean} referenceSelected - Whether reference image is selected
  */
 function handleSelectionChange(selectedPieces, referenceSelected = false) {
+    // Log selection (even if puzzle not loaded - useful for debugging)
+    logInteraction('select', { 
+        n: selectedPieces?.length || 0,
+        ref: referenceSelected || undefined
+    });
+
     if (!puzzleLoaded || !currentImagePath) return;
 
     // Debounce selection broadcast
@@ -854,6 +920,9 @@ let preDragState = null;
  * @param {Array} pieces - Pieces about to be dragged
  */
 function handleDragStart(pieces) {
+    // Log drag start
+    logInteraction('dragStart', { n: pieces?.length || 0 });
+
     if (!puzzleLoaded || isApplyingRemoteUpdate) return;
 
     // Capture positions of pieces before they move
@@ -1903,7 +1972,9 @@ function openBugReportModal() {
             const report = {
                 description,
                 timestamp: new Date().toISOString(),
+                userId: userPrefs.userId || null,
                 consoleLog: [...consoleBuffer],
+                interactionLog: [...interactionBuffer],
                 userAgent: navigator.userAgent,
                 viewport: { width: window.innerWidth, height: window.innerHeight },
                 puzzleState,

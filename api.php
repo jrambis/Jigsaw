@@ -607,6 +607,10 @@ function uploadImage() {
 
     // Move uploaded file
     if (!move_uploaded_file($file['tmp_name'], $filepath)) {
+        logEvent('error', 'Upload failed: move_uploaded_file failed', [
+            'tmp_name' => $file['tmp_name'],
+            'filepath' => $filepath
+        ]);
         sendResponse(false, null, 'Failed to save uploaded file.', 500);
     }
 
@@ -814,7 +818,9 @@ function reportBug() {
     $report = [
         'description' => $description,
         'timestamp' => $data['timestamp'] ?? null,
+        'userId' => $data['userId'] ?? null,
         'consoleLog' => $data['consoleLog'] ?? [],
+        'interactionLog' => $data['interactionLog'] ?? [],
         'userAgent' => $data['userAgent'] ?? null,
         'viewport' => $data['viewport'] ?? null,
         'puzzleState' => $data['puzzleState'] ?? null,
@@ -827,8 +833,13 @@ function reportBug() {
     $filepath = BUGS_DIR . '/' . $filename;
 
     if (safeWriteJson($filepath, $report)) {
+        logEvent('info', 'Bug report received', [
+            'filename' => $filename,
+            'description' => substr($data['description'] ?? '', 0, 100)
+        ]);
         sendResponse(true, ['filename' => $filename], 'Bug report submitted successfully');
     } else {
+        logEvent('error', 'Bug report save failed', ['filepath' => $filepath]);
         sendResponse(false, null, 'Failed to save bug report', 500);
     }
 }
@@ -964,5 +975,10 @@ try {
             sendResponse(false, null, 'Invalid action. Available: saveShared, loadShared, resetPuzzle, listBackups, restoreBackup, updateSelection, subscribe, saveUserPrefs, getUserPrefs, uploadImage, listImages, reportBug, listBugs', 400);
     }
 } catch (Exception $e) {
+    logEvent('error', 'Unhandled exception: ' . $e->getMessage(), [
+        'file' => $e->getFile(),
+        'line' => $e->getLine(),
+        'action' => $_GET['action'] ?? 'unknown'
+    ]);
     sendResponse(false, null, 'Server error: ' . $e->getMessage(), 500);
 }

@@ -10,6 +10,7 @@ define('SHARED_DIR', DATA_DIR . '/shared');
 define('USERS_DIR', DATA_DIR . '/users');
 define('UPLOADS_DIR', DATA_DIR . '/uploads');
 define('BUGS_DIR', DATA_DIR . '/bugs');
+define('LOGS_DIR', DATA_DIR . '/logs');
 
 // Upload settings
 define('MAX_UPLOAD_SIZE', 10 * 1024 * 1024); // 10MB
@@ -17,7 +18,7 @@ define('MAX_IMAGE_DIMENSION', 4096); // Max width/height in pixels
 define('ALLOWED_IMAGE_TYPES', ['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 // Ensure directories exist
-foreach ([DATA_DIR, SHARED_DIR, USERS_DIR, UPLOADS_DIR, BUGS_DIR] as $dir) {
+foreach ([DATA_DIR, SHARED_DIR, USERS_DIR, UPLOADS_DIR, BUGS_DIR, LOGS_DIR] as $dir) {
     if (!file_exists($dir)) {
         mkdir($dir, 0755, true);
     }
@@ -150,4 +151,29 @@ function getUserPrefsPath($userId) {
 function imagePathToName($imagePath) {
     $basename = basename($imagePath);
     return pathinfo($basename, PATHINFO_FILENAME);
+}
+
+/**
+ * Log an error or event to the daily log file
+ * @param string $level Log level (error, warn, info)
+ * @param string $message Log message
+ * @param array $context Optional context data
+ */
+function logEvent($level, $message, $context = []) {
+    $logFile = LOGS_DIR . '/' . date('Y-m-d') . '.log';
+    $timestamp = date('Y-m-d H:i:s');
+    $userId = $_SESSION['puzzle_user_id'] ?? 'unknown';
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'cli';
+    
+    $entry = sprintf(
+        "[%s] [%s] [%s] [%s] %s%s\n",
+        $timestamp,
+        strtoupper($level),
+        $ip,
+        $userId,
+        $message,
+        $context ? ' ' . json_encode($context) : ''
+    );
+    
+    file_put_contents($logFile, $entry, FILE_APPEND | LOCK_EX);
 }

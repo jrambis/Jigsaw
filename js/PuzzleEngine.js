@@ -335,6 +335,13 @@ class PuzzleEngine {
             return;
         }
 
+        // Check if pan starts on an already-selected piece - immediate drag, no hold required
+        const piece = this.getPieceAt(worldPos.x, worldPos.y);
+        if (piece && piece.isSelected) {
+            this.activatePieceDrag(piece, worldPos.x, worldPos.y);
+            return;
+        }
+
         // Lasso mode: start collecting path
         if (this.input.isLassoMode) {
             this.input.isDrawingLasso = true;
@@ -352,7 +359,6 @@ class PuzzleEngine {
 
         if (srcEvent && srcEvent.altKey) {
             // Alt + drag = move piece (mouse only)
-            const piece = this.getPieceAt(worldPos.x, worldPos.y);
             if (piece) {
                 this.activatePieceDrag(piece, worldPos.x, worldPos.y);
                 return;
